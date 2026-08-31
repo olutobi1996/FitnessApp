@@ -22,6 +22,10 @@ function icon(name){
     chat:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a8 8 0 1 1-3.4-6.6L21 4l-1 4.6A7.9 7.9 0 0 1 21 12z"/></svg>',
     users:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9" r="2.6"/><path d="M15.5 12.2A5.5 5.5 0 0 1 21.5 17"/></svg>',
     target:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></svg>',
+    dumbbell:'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="9" width="3.4" height="6" rx="1"/><rect x="19.6" y="9" width="3.4" height="6" rx="1"/><rect x="5" y="10.3" width="3" height="3.4" rx="0.6"/><rect x="16" y="10.3" width="3" height="3.4" rx="0.6"/><line x1="8" y1="12" x2="16" y2="12"/></svg>',
+    flexible:'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>',
+    trending:'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14.5 7 21 7 21 13.5"/></svg>',
+    heartOutlineLg:'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>',
   };
   return icons[name] || '';
 }
@@ -39,7 +43,7 @@ function renderNav(active){
   <header class="topnav">
     <div class="wrap topnav-inner">
       <a href="#/" class="logo">
-        <span class="logo-mark">P</span> PT YOUR WAY
+        <img src="assets/ptyw-logo.png" alt="PT Your Way" class="logo-img">
       </a>
       <nav class="nav-links">
         ${links.map(([href,label]) => `<a href="${href}" class="${active===label?'active':''}">${label}</a>`).join('')}
@@ -53,13 +57,33 @@ function renderNav(active){
   </header>`;
 }
 
+function renderValueStrip(){
+  const items = [
+    { icon:"dumbbell", title:"Personalised", text:"Training plans tailored to your goals, lifestyle and experience." },
+    { icon:"flexible", title:"Flexible", text:"Train in the way that works for you. In the gym, at home or on the go." },
+    { icon:"trending", title:"Results Driven", text:"Sustainable habits and progress that last beyond the gym." },
+    { icon:"heartOutlineLg", title:"Supportive", text:"Ongoing support, guidance and motivation every step of the way." },
+  ];
+  return `
+  <section class="value-strip">
+    <div class="wrap value-grid">
+      ${items.map(i => `
+        <div class="value-item">
+          <span class="value-icon" aria-hidden="true">${icon(i.icon)}</span>
+          <h4>${i.title}</h4>
+          <p>${i.text}</p>
+        </div>`).join('')}
+    </div>
+  </section>`;
+}
+
 function renderFooter(){
   return `
   <footer class="footer">
     <div class="wrap">
       <div class="footer-grid">
         <div>
-          <div class="logo mb-16"><span class="logo-mark">P</span> PT YOUR WAY</div>
+          <div class="logo mb-16"><img src="assets/ptyw-logo.png" alt="PT Your Way" class="logo-img"></div>
           <p class="muted small" style="max-width:260px;">Find the right personal trainer for your goals, your lifestyle, your way. Vetted coaches, online or in person.</p>
         </div>
         <div>
@@ -194,18 +218,25 @@ function renderHome(){
         <span class="field-icon">${icon('search')}</span>
         <input type="text" placeholder="What are you looking for?">
       </label>
-      <label class="search-field divider">
-        <select><option value="">Goal</option>${SPECIALISMS.slice(0,8).map(s=>`<option>${s}</option>`).join('')}</select>
-      </label>
-      <label class="search-field divider">
-        <select><option value="">Specialism</option>${SPECIALISMS.map(s=>`<option>${s}</option>`).join('')}</select>
-      </label>
-      <label class="search-field divider">
-        <select><option value="">Budget</option><option>Up to £40</option><option>£40 – £60</option><option>£60 – £80</option><option>£80+</option></select>
-      </label>
-      <button type="submit" class="btn btn-primary">Search</button>
+      <div class="search-filters-row">
+        <label class="search-field divider">
+          <select><option value="">Goal</option>${SPECIALISMS.slice(0,8).map(s=>`<option>${s}</option>`).join('')}</select>
+        </label>
+        <label class="search-field divider">
+          <select><option value="">Specialism</option>${SPECIALISMS.map(s=>`<option>${s}</option>`).join('')}</select>
+        </label>
+        <label class="search-field divider">
+          <select><option value="">Budget</option><option>Up to £40</option><option>£40 – £60</option><option>£60 – £80</option><option>£80+</option></select>
+        </label>
+      </div>
+      <button type="submit" class="btn btn-primary">
+        <span class="search-submit-icon">${icon('search')}</span>
+        <span class="search-submit-text">Search</span>
+      </button>
     </form>
   </div>
+
+  ${renderValueStrip()}
 
   <section class="section-tight">
     <div class="wrap">

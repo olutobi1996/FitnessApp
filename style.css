@@ -78,13 +78,12 @@ img{ max-width:100%; display:block; }
   display:flex; align-items:center; gap:10px;
   font-weight:800; font-size:1rem; letter-spacing:.02em;
 }
-.logo-mark{
-  width:34px; height:34px; border-radius:10px;
-  background:linear-gradient(155deg, var(--blue), var(--blue-dark));
-  color:#fff; display:flex; align-items:center; justify-content:center;
-  font-weight:800; font-size:1.05rem;
-  box-shadow:0 4px 10px rgba(37,99,235,.28);
+.logo-img{
+  height:44px;
+  width:auto;
+  display:block;
 }
+.footer .logo-img{ height:52px; }
 .nav-links{ display:flex; align-items:center; gap:36px; }
 .nav-links a{ font-size:.92rem; font-weight:500; color:var(--ink-soft); transition:color .15s var(--ease); }
 .nav-links a:hover, .nav-links a.active{ color:var(--ink); }
@@ -102,7 +101,9 @@ img{ max-width:100%; display:block; }
 .hero-media{
   position:absolute; inset:0;
 }
-.hero-media img{
+/* Shared rule so a <video> can drop in later without any markup/CSS changes */
+.hero-media img,
+.hero-media video{
   width:100%; height:100%; object-fit:cover; object-position:70% 25%;
 }
 .hero-media::after{
@@ -175,6 +176,44 @@ img{ max-width:100%; display:block; }
 .search-field input::placeholder{ color:var(--muted); }
 .search-field.divider{ border-left:1px solid var(--line); border-radius:0; }
 .search-bar .btn-primary{ padding:0 30px; border-radius:14px; font-size:.92rem; }
+.search-filters-row{ display:contents; }
+.search-submit-icon{ display:none; }
+
+/* ---------- value strip (Personalised / Flexible / Results Driven / Supportive) ---------- */
+.value-strip{ padding:64px 0; background:var(--bg-soft); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+.value-grid{
+  display:grid;
+  grid-template-columns:repeat(4, 1fr);
+  gap:0;
+}
+.value-item{
+  position:relative;
+  text-align:center;
+  padding:8px 28px;
+}
+.value-item:not(:first-child)::before{
+  content:'';
+  position:absolute;
+  left:0; top:14%; bottom:14%;
+  width:1px;
+  background:var(--line);
+}
+.value-icon{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:60px; height:60px; border-radius:50%;
+  background:#fff;
+  color:var(--blue);
+  margin-bottom:16px;
+  box-shadow:var(--shadow-sm);
+}
+.value-item h4{
+  margin:0 0 8px;
+  font-size:1rem; font-weight:800; color:var(--ink);
+  letter-spacing:.01em;
+}
+.value-item p{
+  margin:0; color:var(--ink-soft); font-size:.87rem; line-height:1.55;
+}
 
 /* ---------- section headers ---------- */
 .section{ padding:88px 0; }
@@ -317,22 +356,91 @@ img{ max-width:100%; display:block; }
   .feat-grid{ grid-template-columns:1fr; gap:28px; }
   .footer-grid{ grid-template-columns:1fr 1fr; }
   .cta-band{ flex-direction:column; align-items:flex-start; }
+  .value-grid{ grid-template-columns:repeat(2, 1fr); }
 }
 @media (max-width: 860px){
   .nav-links{ display:none; }
   .nav-mobile-toggle{ display:flex; }
-  .search-bar{ grid-template-columns:1fr; }
-  .search-field.divider{ border-left:none; border-top:1px solid var(--line); border-radius:14px; }
-  .hero{ min-height:auto; }
-  .hero-inner{ padding:72px 0 96px; }
+
+  /* ---- hero: keeps a real banner height so it reads well now, and so a
+     future video fills the frame properly instead of collapsing to the
+     height of the text ---- */
+  .hero{ min-height:440px; }
+  .hero-inner{ padding:56px 0 40px; }
   .hero p{ max-width:100%; }
+  .hero-media img,
+  .hero-media video{ object-position:66% 20%; }
+  .logo-img{ height:36px; }
+  .footer .logo-img{ height:40px; }
+
+  /* ---- mobile search: sits neatly below the hero (no overlap), and is
+     restyled into a compact card — main search on its own row, the
+     Goal/Specialism/Budget filters become a swipeable row along the
+     side instead of three full-width stacked fields ---- */
+  .search-card{
+    position:relative;
+    z-index:5;
+    margin-top:18px;
+    margin-bottom:36px;
+  }
+  .search-bar{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    padding:12px;
+    border-radius:18px;
+  }
+  .search-field{ padding:11px 14px; border-radius:12px; background:var(--bg-soft); }
+  .search-field:hover{ background:var(--bg-soft); }
+  .search-field input, .search-field select{ font-size:.88rem; }
+  .search-field.divider{ border-left:none; border-top:none; }
+
+  .search-filters-row{
+    display:flex;
+    gap:8px;
+    overflow-x:auto;
+    scrollbar-width:none;
+    -webkit-overflow-scrolling:touch;
+    padding-bottom:1px;
+    margin:0 -12px;
+    padding-left:12px;
+    padding-right:12px;
+  }
+  .search-filters-row::-webkit-scrollbar{ display:none; }
+  .search-filters-row .search-field{
+    flex:0 0 auto;
+    min-width:150px;
+    border-radius:12px;
+  }
+  .search-filters-row .search-field select{ min-width:0; }
+
+  .search-bar .btn-primary{
+    width:100%;
+    padding:12px 16px;
+    border-radius:12px;
+  }
+  .search-submit-icon{ display:inline-flex; }
+
+  /* ---- value strip: 2x2 on tablets/phones, dividers dropped since they
+     don't read well once the grid wraps to two rows ---- */
+  .value-grid{ grid-template-columns:repeat(2, 1fr); gap:20px 12px; }
+  .value-item::before{ display:none; }
 }
 @media (max-width: 600px){
   .wrap{ padding:0 20px; }
   .tgrid{ grid-template-columns:1fr; }
+  .value-strip{ padding:44px 0; }
+  .value-item{ padding:6px 8px; }
+  .value-icon{ width:48px; height:48px; margin-bottom:10px; }
+  .value-icon svg{ width:21px; height:21px; }
+  .value-item h4{ font-size:.85rem; }
+  .value-item p{ font-size:.78rem; }
   .section{ padding:56px 0; }
   .section-head{ flex-direction:column; align-items:flex-start; gap:12px; }
   .nav-actions .btn-outline{ display:none; }
   .cta-band{ padding:36px 24px; }
   .footer-bottom{ flex-direction:column; gap:8px; align-items:flex-start; }
+
+  .hero-inner{ padding:44px 0 32px; }
+  .search-filters-row .search-field{ min-width:132px; }
 }
