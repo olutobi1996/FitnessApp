@@ -79,11 +79,11 @@ img{ max-width:100%; display:block; }
   font-weight:800; font-size:1rem; letter-spacing:.02em;
 }
 .logo-img{
-  height:44px;
+  height:58px;
   width:auto;
   display:block;
 }
-.footer .logo-img{ height:52px; }
+.footer .logo-img{ height:60px; }
 .nav-links{ display:flex; align-items:center; gap:36px; }
 .nav-links a{ font-size:.92rem; font-weight:500; color:var(--ink-soft); transition:color .15s var(--ease); }
 .nav-links a:hover, .nav-links a.active{ color:var(--ink); }
@@ -370,8 +370,8 @@ img{ max-width:100%; display:block; }
   .hero p{ max-width:100%; }
   .hero-media img,
   .hero-media video{ object-position:66% 20%; }
-  .logo-img{ height:36px; }
-  .footer .logo-img{ height:40px; }
+  .logo-img{ height:50px; }
+  .footer .logo-img{ height:44px; }
 
   /* ---- mobile search: sits neatly below the hero (no overlap), and is
      restyled into a compact card — main search on its own row, the
