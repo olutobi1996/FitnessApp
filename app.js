@@ -5,6 +5,73 @@
 const state = {
   favorites: new Set(["sophie-moore"]),
   role: null, // 'client' | 'pt' | 'admin'
+  currentUser: null, // set on load from AUTH.getSession()
+};
+
+/* ============================================================
+   SUPABASE — real backend (auth + database)
+   Fill these in from your Supabase project: Settings → API
+   ============================================================ */
+
+const SUPABASE_URL = "YOUR_SUPABASE_PROJECT_URL"; // e.g. https://abcdefgh.supabase.co
+const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_PUBLIC_KEY";
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* ============================================================
+   AUTH — backed by Supabase Auth + a "profiles" table
+   Real accounts, hashed passwords, real sessions — Supabase
+   handles all of that. We just store name/role/specialism in
+   a "profiles" row linked to each auth user (see supabase-schema.sql).
+   ============================================================ */
+
+const AUTH = {
+  // returns { ok:true, user } or { ok:false, error }
+  async signup({ name, email, password, role, specialism }){
+    email = (email || "").trim().toLowerCase();
+    if(!name || !email || !password) return { ok:false, error:"Please fill in all fields." };
+    if(password.length < 6) return { ok:false, error:"Password must be at least 6 characters." };
+
+    const { data, error } = await sb.auth.signUp({ email, password });
+    if(error) return { ok:false, error: error.message };
+
+    const userId = data.user && data.user.id;
+    if(!userId) return { ok:false, error:"Check your inbox to confirm your email, then log in." };
+
+    const profile = { id: userId, name, role, specialism: specialism || null };
+    const { error: profileError } = await sb.from('profiles').insert(profile);
+    if(profileError) return { ok:false, error: profileError.message };
+
+    return { ok:true, user: { id: userId, email, ...profile } };
+  },
+
+  // returns { ok:true, user } or { ok:false, error }
+  async login({ email, password }){
+    email = (email || "").trim().toLowerCase();
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if(error) return { ok:false, error:"Incorrect email or password." };
+
+    const profile = await this.fetchProfile(data.user.id);
+    return { ok:true, user: { id: data.user.id, email: data.user.email, ...profile } };
+  },
+
+  async logout(){
+    await sb.auth.signOut();
+  },
+
+  async fetchProfile(userId){
+    const { data, error } = await sb.from('profiles').select('*').eq('id', userId).single();
+    if(error) return {};
+    return data;
+  },
+
+  // called on page load to restore an existing session, if any
+  async getSession(){
+    const { data: { session } } = await sb.auth.getSession();
+    if(!session) return null;
+    const profile = await this.fetchProfile(session.user.id);
+    return { id: session.user.id, email: session.user.email, ...profile };
+  },
 };
 
 function icon(name){
@@ -39,6 +106,17 @@ function renderNav(active){
     ["#/search","Find a PT"], ["#/how-it-works","How It Works"],
     ["#/for-pts","For PTs"], ["#/about","About"]
   ];
+  const user = state.currentUser;
+  const authActions = user
+    ? `
+      <a href="${user.role === 'pt' ? '#/pt-dashboard' : '#/client-dashboard'}" class="btn btn-outline nav-account">
+        <span class="nav-account-avatar">${user.name.trim().charAt(0).toUpperCase()}</span>
+        ${user.name.split(' ')[0]}
+      </a>
+      <button class="btn btn-primary" onclick="handleLogout()">Log out</button>`
+    : `
+      <a href="#/login" class="btn btn-outline">Log in</a>
+      <a href="#/signup" class="btn btn-primary">Sign up</a>`;
   return `
   <header class="topnav">
     <div class="wrap topnav-inner">
@@ -49,12 +127,18 @@ function renderNav(active){
         ${links.map(([href,label]) => `<a href="${href}" class="${active===label?'active':''}">${label}</a>`).join('')}
       </nav>
       <div class="nav-actions">
-        <a href="#/login" class="btn btn-outline">Log in</a>
-        <a href="#/signup" class="btn btn-primary">Sign up</a>
+        ${authActions}
         <button class="nav-mobile-toggle" aria-label="Menu">${icon('menu')}</button>
       </div>
     </div>
   </header>`;
+}
+
+async function handleLogout(){
+  await AUTH.logout();
+  state.currentUser = null;
+  navigateTo('#/');
+  render();
 }
 
 function renderValueStrip(){
@@ -338,6 +422,280 @@ function renderTrainerProfile(id){
 }
 
 /* ============================================================
+   PAGE: SIGN UP
+   ============================================================ */
+
+function renderSignup(role){
+  role = role === 'pt' ? 'pt' : 'client';
+  return `
+  ${renderNav("")}
+  <section class="auth-section">
+    <div class="wrap auth-wrap">
+      <div class="auth-card">
+        <div class="auth-head">
+          <h2>Create your account</h2>
+          <p class="muted">Join PT Your Way ${role === 'pt' ? 'as a personal trainer' : 'to find your coach'}.</p>
+        </div>
+
+        <div class="role-toggle" role="tablist">
+          <a href="#/signup" class="role-tab ${role==='client'?'active':''}">I'm a client</a>
+          <a href="#/signup-pt" class="role-tab ${role==='pt'?'active':''}">I'm a personal trainer</a>
+        </div>
+
+        <form id="signup-form" class="auth-form" onsubmit="handleSignup(event, '${role}')">
+          <div id="signup-error" class="form-error" hidden></div>
+          <label class="form-field">
+            <span>Full name</span>
+            <input type="text" name="name" placeholder="Jordan Smith" required>
+          </label>
+          <label class="form-field">
+            <span>Email address</span>
+            <input type="email" name="email" placeholder="you@example.com" required>
+          </label>
+          <label class="form-field">
+            <span>Password</span>
+            <input type="password" name="password" placeholder="At least 6 characters" minlength="6" required>
+          </label>
+          ${role === 'pt' ? `
+          <label class="form-field">
+            <span>Specialism</span>
+            <select name="specialism" required>
+              <option value="">Select your specialism</option>
+              ${SPECIALISMS.map(s => `<option>${s}</option>`).join('')}
+            </select>
+          </label>` : ''}
+          <label class="form-check">
+            <input type="checkbox" required>
+            <span>I agree to the <a href="#/">Terms</a> and <a href="#/">Privacy Policy</a></span>
+          </label>
+          <button type="submit" class="btn btn-primary btn-block btn-lg">
+            ${role === 'pt' ? 'Create trainer account' : 'Create account'}
+          </button>
+        </form>
+
+        <p class="auth-switch">Already have an account? <a href="#/login">Log in</a></p>
+      </div>
+    </div>
+  </section>
+  ${renderFooter()}
+  `;
+}
+
+async function handleSignup(event, role){
+  event.preventDefault();
+  const form = event.target;
+  const submitBtn = form.querySelector('button[type="submit"]');
+  const originalLabel = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Creating account…";
+
+  const data = {
+    name: form.name.value.trim(),
+    email: form.email.value.trim(),
+    password: form.password.value,
+    role,
+    specialism: form.specialism ? form.specialism.value : "",
+  };
+  const result = await AUTH.signup(data);
+
+  if(!result.ok){
+    const errorBox = document.getElementById('signup-error');
+    errorBox.textContent = result.error;
+    errorBox.hidden = false;
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalLabel;
+    return;
+  }
+  state.currentUser = result.user;
+  navigateTo(role === 'pt' ? '#/pt-dashboard' : '#/client-dashboard');
+  render();
+}
+
+/* ============================================================
+   PAGE: LOG IN
+   ============================================================ */
+
+function renderLogin(){
+  return `
+  ${renderNav("")}
+  <section class="auth-section">
+    <div class="wrap auth-wrap">
+      <div class="auth-card">
+        <div class="auth-head">
+          <h2>Welcome back</h2>
+          <p class="muted">Log in to your PT Your Way account.</p>
+        </div>
+
+        <form id="login-form" class="auth-form" onsubmit="handleLogin(event)">
+          <div id="login-error" class="form-error" hidden></div>
+          <label class="form-field">
+            <span>Email address</span>
+            <input type="email" name="email" placeholder="you@example.com" required>
+          </label>
+          <label class="form-field">
+            <span>Password</span>
+            <input type="password" name="password" placeholder="Your password" required>
+          </label>
+          <button type="submit" class="btn btn-primary btn-block btn-lg">Log in</button>
+        </form>
+
+        <p class="auth-switch">New to PT Your Way? <a href="#/signup">Sign up as a client</a> · <a href="#/signup-pt">Sign up as a PT</a></p>
+      </div>
+    </div>
+  </section>
+  ${renderFooter()}
+  `;
+}
+
+async function handleLogin(event){
+  event.preventDefault();
+  const form = event.target;
+  const submitBtn = form.querySelector('button[type="submit"]');
+  const originalLabel = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Logging in…";
+
+  const result = await AUTH.login({ email: form.email.value, password: form.password.value });
+
+  if(!result.ok){
+    const errorBox = document.getElementById('login-error');
+    errorBox.textContent = result.error;
+    errorBox.hidden = false;
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalLabel;
+    return;
+  }
+  state.currentUser = result.user;
+  navigateTo(result.user.role === 'pt' ? '#/pt-dashboard' : '#/client-dashboard');
+  render();
+}
+
+/* ============================================================
+   PAGE: CLIENT DASHBOARD
+   ============================================================ */
+
+function renderClientDashboard(){
+  const user = state.currentUser;
+  const favTrainers = TRAINERS.filter(t => state.favorites.has(t.id));
+  return `
+  ${renderNav("")}
+  <section class="dash">
+    <div class="wrap dash-wrap">
+      ${renderDashSidebar('client')}
+      <div class="dash-main">
+        <div class="dash-welcome">
+          <h2>Welcome back, ${user.name.split(' ')[0]}</h2>
+          <p class="muted">Pick up where you left off, or find a new coach.</p>
+        </div>
+
+        <div class="dash-cards">
+          <div class="dash-stat">
+            <span class="dash-stat-num">${favTrainers.length}</span>
+            <span class="dash-stat-label">Saved trainers</span>
+          </div>
+          <div class="dash-stat">
+            <span class="dash-stat-num">0</span>
+            <span class="dash-stat-label">Active bookings</span>
+          </div>
+          <div class="dash-stat">
+            <span class="dash-stat-num">0</span>
+            <span class="dash-stat-label">Messages</span>
+          </div>
+        </div>
+
+        <div class="dash-section-head">
+          <h3>Your saved trainers</h3>
+          <a href="#/search" class="link-arrow">Find more coaches ${icon('arrow')}</a>
+        </div>
+        ${favTrainers.length ? `
+          <div class="tgrid dash-tgrid">
+            ${favTrainers.map(trainerCard).join('')}
+          </div>` : `
+          <div class="dash-empty">
+            <p class="muted">You haven't saved any trainers yet. Browse coaches and tap the heart icon to save them here.</p>
+            <a href="#/search" class="btn btn-primary">Browse coaches</a>
+          </div>`}
+      </div>
+    </div>
+  </section>
+  ${renderFooter()}
+  `;
+}
+
+/* ============================================================
+   PAGE: PT DASHBOARD
+   ============================================================ */
+
+function renderPTDashboard(){
+  const user = state.currentUser;
+  return `
+  ${renderNav("")}
+  <section class="dash">
+    <div class="wrap dash-wrap">
+      ${renderDashSidebar('pt')}
+      <div class="dash-main">
+        <div class="dash-welcome">
+          <h2>Welcome back, ${user.name.split(' ')[0]}</h2>
+          <p class="muted">${user.specialism || 'Manage your profile and bookings.'}</p>
+        </div>
+
+        <div class="dash-cards">
+          <div class="dash-stat">
+            <span class="dash-stat-num">0</span>
+            <span class="dash-stat-label">Active clients</span>
+          </div>
+          <div class="dash-stat">
+            <span class="dash-stat-num">0</span>
+            <span class="dash-stat-label">Upcoming sessions</span>
+          </div>
+          <div class="dash-stat">
+            <span class="dash-stat-num">0</span>
+            <span class="dash-stat-label">Profile views</span>
+          </div>
+        </div>
+
+        <div class="dash-section-head">
+          <h3>Your profile</h3>
+        </div>
+        <div class="dash-empty">
+          <p class="muted">Your public trainer profile — photos, bio, pricing packages and availability — isn't built out yet. This is where you'll manage everything clients see.</p>
+          <button class="btn btn-primary" disabled>Edit profile (coming soon)</button>
+        </div>
+      </div>
+    </div>
+  </section>
+  ${renderFooter()}
+  `;
+}
+
+function renderDashSidebar(role){
+  const user = state.currentUser;
+  const clientLinks = [
+    ["#/client-dashboard","Overview"], ["#/search","Find a PT"],
+    ["#/client-dashboard","Saved trainers"], ["#/client-dashboard","Bookings"], ["#/client-dashboard","Messages"],
+  ];
+  const ptLinks = [
+    ["#/pt-dashboard","Overview"], ["#/pt-dashboard","My profile"],
+    ["#/pt-dashboard","Bookings"], ["#/pt-dashboard","Clients"], ["#/pt-dashboard","Messages"],
+  ];
+  const links = role === 'pt' ? ptLinks : clientLinks;
+  return `
+  <aside class="dash-sidebar">
+    <div class="dash-user">
+      <span class="dash-user-avatar">${user.name.trim().charAt(0).toUpperCase()}</span>
+      <div>
+        <div class="dash-user-name">${user.name}</div>
+        <div class="dash-user-role">${role === 'pt' ? 'Personal trainer' : 'Client'}</div>
+      </div>
+    </div>
+    <nav class="dash-nav">
+      ${links.map(([href,label],i) => `<a href="${href}" class="${i===0?'active':''}">${label}</a>`).join('')}
+    </nav>
+    <button class="btn btn-outline btn-block" onclick="handleLogout()">Log out</button>
+  </aside>`;
+}
+
+/* ============================================================
    ROUTER
    ============================================================ */
 
@@ -356,9 +714,29 @@ function render(){
   } else if(hash === "#/about"){
     app.innerHTML = renderPlaceholder("About PT Your Way", "We connect clients with qualified, verified personal trainers — online or in person.", "About");
   } else if(hash === "#/login"){
-    app.innerHTML = renderPlaceholder("Log in", "Account login is coming soon.");
-  } else if(hash === "#/signup" || hash === "#/signup-pt"){
-    app.innerHTML = renderPlaceholder("Sign up", "Account creation is coming soon.");
+    if(state.currentUser){ navigateTo(state.currentUser.role === 'pt' ? '#/pt-dashboard' : '#/client-dashboard'); return render(); }
+    app.innerHTML = renderLogin();
+  } else if(hash === "#/signup"){
+    if(state.currentUser){ navigateTo(state.currentUser.role === 'pt' ? '#/pt-dashboard' : '#/client-dashboard'); return render(); }
+    app.innerHTML = renderSignup('client');
+  } else if(hash === "#/signup-pt"){
+    if(state.currentUser){ navigateTo(state.currentUser.role === 'pt' ? '#/pt-dashboard' : '#/client-dashboard'); return render(); }
+    app.innerHTML = renderSignup('pt');
+  } else if(hash === "#/logout"){
+    handleLogout();
+    return;
+  } else if(hash === "#/dashboard"){
+    if(!state.currentUser){ navigateTo('#/login'); return render(); }
+    navigateTo(state.currentUser.role === 'pt' ? '#/pt-dashboard' : '#/client-dashboard');
+    return render();
+  } else if(hash === "#/client-dashboard"){
+    if(!state.currentUser){ navigateTo('#/login'); return render(); }
+    if(state.currentUser.role !== 'client'){ navigateTo('#/pt-dashboard'); return render(); }
+    app.innerHTML = renderClientDashboard();
+  } else if(hash === "#/pt-dashboard"){
+    if(!state.currentUser){ navigateTo('#/login'); return render(); }
+    if(state.currentUser.role !== 'pt'){ navigateTo('#/client-dashboard'); return render(); }
+    app.innerHTML = renderPTDashboard();
   } else if(hash.startsWith("#/trainer/")){
     app.innerHTML = renderTrainerProfile(hash.replace("#/trainer/",""));
   } else {
@@ -366,5 +744,12 @@ function render(){
   }
 }
 
+async function initApp(){
+  // restore an existing session (if the person is already logged in) before
+  // the first render, so the nav/dashboard shows the right state immediately
+  state.currentUser = await AUTH.getSession();
+  render();
+}
+
 window.addEventListener('hashchange', render);
-window.addEventListener('DOMContentLoaded', render);
+window.addEventListener('DOMContentLoaded', initApp);
