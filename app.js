@@ -13,8 +13,8 @@ const state = {
    Fill these in from your Supabase project: Settings → API
    ============================================================ */
 
-const SUPABASE_URL = "YOUR_SUPABASE_PROJECT_URL"; // e.g. https://abcdefgh.supabase.co
-const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_PUBLIC_KEY";
+const SUPABASE_URL = "https://ifxkdihhjzuulysbwchk.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_rEK56aZHSZ6rJ2x6UnyMkQ_FLZunsQu";
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
