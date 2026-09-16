@@ -32,17 +32,30 @@ const AUTH = {
     if(!name || !email || !password) return { ok:false, error:"Please fill in all fields." };
     if(password.length < 6) return { ok:false, error:"Password must be at least 6 characters." };
 
-    const { data, error } = await sb.auth.signUp({ email, password });
+    // name/role/specialism go in user metadata — the database trigger
+    // (supabase-signup-trigger.sql) reads these to build the profile row,
+    // which works even before the person has confirmed their email.
+    const { data, error } = await sb.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { name, role, specialism: specialism || '' },
+        emailRedirectTo: window.location.origin + window.location.pathname + '#/welcome',
+      }
+    });
     if(error) return { ok:false, error: error.message };
 
     const userId = data.user && data.user.id;
-    if(!userId) return { ok:false, error:"Check your inbox to confirm your email, then log in." };
+    if(!userId) return { ok:false, error:"Something went wrong creating your account. Please try again." };
 
-    const profile = { id: userId, name, role, specialism: specialism || null };
-    const { error: profileError } = await sb.from('profiles').insert(profile);
-    if(profileError) return { ok:false, error: profileError.message };
+    // No session means email confirmation is switched on — they need to
+    // click the link in their inbox before they can log in.
+    if(!data.session){
+      return { ok:true, needsConfirmation:true, email };
+    }
 
-    return { ok:true, user: { id: userId, email, ...profile } };
+    const profile = await this.fetchProfile(userId);
+    return { ok:true, user: { id: userId, email, name, role, specialism: specialism || null, ...profile } };
   },
 
   // returns { ok:true, user } or { ok:false, error }
@@ -72,6 +85,39 @@ const AUTH = {
     const profile = await this.fetchProfile(session.user.id);
     return { id: session.user.id, email: session.user.email, ...profile };
   },
+
+  // save edits from the profile page back to the profiles table
+  async updateProfile(userId, fields){
+    const payload = { ...fields, updated_at: new Date().toISOString() };
+    const { error } = await sb.from('profiles').update(payload).eq('id', userId);
+    if(error) return { ok:false, error: error.message };
+    return { ok:true };
+  },
+
+  // upload a profile picture to the "avatars" storage bucket
+  async uploadAvatar(userId, file){
+    if(!file) return { ok:false, error:"No file selected." };
+    if(!file.type.startsWith('image/')) return { ok:false, error:"Please choose an image file." };
+    if(file.size > 5 * 1024 * 1024) return { ok:false, error:"Image must be under 5MB." };
+
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+    // stored under the user's own id folder — the storage policy requires this
+    const path = `${userId}/avatar.${ext}`;
+
+    const { error: uploadError } = await sb.storage
+      .from('avatars')
+      .upload(path, file, { upsert: true, cacheControl: '3600' });
+    if(uploadError) return { ok:false, error: uploadError.message };
+
+    const { data } = sb.storage.from('avatars').getPublicUrl(path);
+    // cache-bust so a replaced picture shows immediately
+    const photoUrl = `${data.publicUrl}?t=${Date.now()}`;
+
+    const saved = await this.updateProfile(userId, { photo_url: photoUrl });
+    if(!saved.ok) return saved;
+
+    return { ok:true, photoUrl };
+  },
 };
 
 function icon(name){
@@ -86,6 +132,10 @@ function icon(name){
     location:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>',
     arrow:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
     menu:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>',
+    close:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg>',
+    camera:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h3.5L8 5.5h8L17.5 8H21v12H3z"/><circle cx="12" cy="13.5" r="3.6"/></svg>',
+    mail:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
+    edit:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
     chat:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a8 8 0 1 1-3.4-6.6L21 4l-1 4.6A7.9 7.9 0 0 1 21 12z"/></svg>',
     users:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9" r="2.6"/><path d="M15.5 12.2A5.5 5.5 0 0 1 21.5 17"/></svg>',
     target:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></svg>',
@@ -128,11 +178,102 @@ function renderNav(active){
       </nav>
       <div class="nav-actions">
         ${authActions}
-        <button class="nav-mobile-toggle" aria-label="Menu">${icon('menu')}</button>
+        <button class="nav-mobile-toggle" aria-label="Open menu" aria-expanded="false" onclick="toggleMobileMenu()">${icon('menu')}</button>
       </div>
     </div>
-  </header>`;
+  </header>
+  ${renderMobileMenu(active)}`;
 }
+
+/* ---------- mobile burger menu ----------
+   Links change depending on whether someone is logged in, and whether
+   they're a client or a PT — so the menu always mirrors the top nav. */
+
+function renderMobileMenu(active){
+  const user = state.currentUser;
+
+  // Links everyone sees, logged in or not
+  const publicLinks = [
+    ["#/","Home"], ["#/search","Find a PT"], ["#/how-it-works","How It Works"],
+    ["#/for-pts","For PTs"], ["#/about","About"]
+  ];
+
+  // Account links depend on who (if anyone) is logged in
+  const accountLinks = !user
+    ? [["#/login","Log in"], ["#/signup","Sign up as a client"], ["#/signup-pt","Sign up as a PT"]]
+    : user.role === 'pt'
+      ? [["#/pt-dashboard","Dashboard"], ["#/profile","My profile"], ["#/pt-dashboard","Bookings"], ["#/pt-dashboard","Clients"], ["#/pt-dashboard","Messages"]]
+      : [["#/client-dashboard","Dashboard"], ["#/profile","My profile"], ["#/client-dashboard","Saved trainers"], ["#/client-dashboard","Bookings"], ["#/client-dashboard","Messages"]];
+
+  return `
+  <div class="mobile-menu" id="mobile-menu" hidden>
+    <div class="mobile-menu-backdrop" onclick="closeMobileMenu()"></div>
+    <nav class="mobile-menu-panel" aria-label="Mobile menu">
+      <div class="mobile-menu-head">
+        <span class="mobile-menu-title">Menu</span>
+        <button class="mobile-menu-close" aria-label="Close menu" onclick="closeMobileMenu()">${icon('close')}</button>
+      </div>
+
+      ${user ? `
+        <div class="mobile-menu-user">
+          <span class="mobile-menu-avatar">${user.name.trim().charAt(0).toUpperCase()}</span>
+          <div>
+            <div class="mobile-menu-name">${user.name}</div>
+            <div class="mobile-menu-role">${user.role === 'pt' ? 'Personal trainer' : 'Client'}</div>
+          </div>
+        </div>` : ''}
+
+      <div class="mobile-menu-group">
+        ${publicLinks.map(([href,label]) =>
+          `<a href="${href}" class="${active===label?'active':''}" onclick="closeMobileMenu()">${label}</a>`
+        ).join('')}
+      </div>
+
+      <div class="mobile-menu-group mobile-menu-group-account">
+        <span class="mobile-menu-label">${user ? 'Your account' : 'Get started'}</span>
+        ${accountLinks.map(([href,label]) =>
+          `<a href="${href}" onclick="closeMobileMenu()">${label}</a>`
+        ).join('')}
+      </div>
+
+      <div class="mobile-menu-foot">
+        ${user
+          ? `<button class="btn btn-outline btn-block" onclick="closeMobileMenu(); handleLogout();">Log out</button>`
+          : `<a href="#/signup" class="btn btn-primary btn-block" onclick="closeMobileMenu()">Sign up free</a>`}
+      </div>
+    </nav>
+  </div>`;
+}
+
+function toggleMobileMenu(){
+  const menu = document.getElementById('mobile-menu');
+  if(!menu) return;
+  menu.hidden ? openMobileMenu() : closeMobileMenu();
+}
+
+function openMobileMenu(){
+  const menu = document.getElementById('mobile-menu');
+  if(!menu) return;
+  menu.hidden = false;
+  // next frame, so the CSS transition actually runs
+  requestAnimationFrame(() => menu.classList.add('open'));
+  document.body.style.overflow = 'hidden'; // stop the page scrolling behind the menu
+  const toggle = document.querySelector('.nav-mobile-toggle');
+  if(toggle) toggle.setAttribute('aria-expanded','true');
+}
+
+function closeMobileMenu(){
+  const menu = document.getElementById('mobile-menu');
+  if(!menu) return;
+  menu.classList.remove('open');
+  document.body.style.overflow = '';
+  const toggle = document.querySelector('.nav-mobile-toggle');
+  if(toggle) toggle.setAttribute('aria-expanded','false');
+  setTimeout(() => { if(!menu.classList.contains('open')) menu.hidden = true; }, 250);
+}
+
+// Esc closes the menu
+window.addEventListener('keydown', e => { if(e.key === 'Escape') closeMobileMenu(); });
 
 async function handleLogout(){
   await AUTH.logout();
@@ -287,7 +428,12 @@ function renderHome(){
 
   <section class="hero">
     <div class="hero-media">
-      <img src="https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=1600&q=80" alt="Personal trainer outdoors">
+      <video
+        src="assets/headervid.mp4"
+        poster="assets/hero-poster.jpg"
+        autoplay muted loop playsinline
+        preload="auto"
+        aria-hidden="true"></video>
     </div>
     <div class="wrap hero-inner">
       <span class="hero-eyebrow">Personal training, on your terms</span>
@@ -506,9 +652,76 @@ async function handleSignup(event, role){
     submitBtn.textContent = originalLabel;
     return;
   }
+  // Email confirmation is on — tell them to check their inbox
+  if(result.needsConfirmation){
+    document.getElementById('app').innerHTML = renderCheckInbox(result.email);
+    window.scrollTo(0,0);
+    return;
+  }
+
   state.currentUser = result.user;
   navigateTo(role === 'pt' ? '#/pt-dashboard' : '#/client-dashboard');
   render();
+}
+
+/* Shown right after signup when the person needs to confirm their email */
+function renderCheckInbox(email){
+  return `
+  ${renderNav("")}
+  <section class="auth-section">
+    <div class="wrap auth-wrap">
+      <div class="auth-card auth-card-center">
+        <div class="inbox-icon">${icon('mail')}</div>
+        <h2>Check your inbox</h2>
+        <p class="muted">We've sent a confirmation link to <strong>${email}</strong>. Click it to activate your account and get started.</p>
+        <div class="inbox-note">
+          <p class="muted">Can't find it? Check your spam or junk folder — confirmation emails sometimes land there.</p>
+        </div>
+        <a href="#/login" class="btn btn-primary btn-block btn-lg">Go to log in</a>
+      </div>
+    </div>
+  </section>
+  ${renderFooter()}
+  `;
+}
+
+/* Where the confirmation link lands them */
+function renderWelcome(){
+  const user = state.currentUser;
+  return `
+  ${renderNav("")}
+  <section class="auth-section">
+    <div class="wrap auth-wrap">
+      <div class="auth-card auth-card-center">
+        <div class="inbox-icon inbox-icon-success">${icon('check')}</div>
+        <h2>Welcome to PT Your Way${user ? ', ' + user.name.split(' ')[0] : ''}!</h2>
+        <p class="muted">Your email is confirmed and your account is ready to go.</p>
+        <div class="welcome-steps">
+          <div class="welcome-step">
+            <span class="welcome-step-num">1</span>
+            <div>
+              <strong>Complete your profile</strong>
+              <p class="muted">Add a photo, bio and your details.</p>
+            </div>
+          </div>
+          <div class="welcome-step">
+            <span class="welcome-step-num">2</span>
+            <div>
+              <strong>${user && user.role === 'pt' ? 'Set your rates' : 'Find your coach'}</strong>
+              <p class="muted">${user && user.role === 'pt'
+                ? 'Tell clients what you charge and what you specialise in.'
+                : 'Browse trainers and save the ones you like.'}</p>
+            </div>
+          </div>
+        </div>
+        ${user
+          ? `<a href="#/profile" class="btn btn-primary btn-block btn-lg">Complete your profile</a>`
+          : `<a href="#/login" class="btn btn-primary btn-block btn-lg">Log in to get started</a>`}
+      </div>
+    </div>
+  </section>
+  ${renderFooter()}
+  `;
 }
 
 /* ============================================================
@@ -585,7 +798,7 @@ function renderClientDashboard(){
       <div class="dash-main">
         <div class="dash-welcome">
           <h2>Welcome back, ${user.name.split(' ')[0]}</h2>
-          <p class="muted">Pick up where you left off, or find a new coach.</p>
+          <p class="muted">Pick up where you left off, or find a new coach. <a href="#/profile" class="inline-link">View your profile</a></p>
         </div>
 
         <div class="dash-cards">
@@ -656,10 +869,11 @@ function renderPTDashboard(){
 
         <div class="dash-section-head">
           <h3>Your profile</h3>
+          <a href="#/profile" class="link-arrow">Edit profile ${icon('arrow')}</a>
         </div>
         <div class="dash-empty">
-          <p class="muted">Your public trainer profile — photos, bio, pricing packages and availability — isn't built out yet. This is where you'll manage everything clients see.</p>
-          <button class="btn btn-primary" disabled>Edit profile (coming soon)</button>
+          <p class="muted">Add your photo, bio, rates and contact details so clients can find you and know what you offer.</p>
+          <a href="#/profile" class="btn btn-primary">Edit your profile</a>
         </div>
       </div>
     </div>
@@ -668,28 +882,262 @@ function renderPTDashboard(){
   `;
 }
 
+/* ============================================================
+   PAGE: MY PROFILE  (clients and PTs both use this)
+   ============================================================ */
+
+function renderProfile(){
+  const user = state.currentUser;
+  const isPT = user.role === 'pt';
+  const favTrainers = TRAINERS.filter(t => state.favorites.has(t.id));
+  const initial = user.name.trim().charAt(0).toUpperCase();
+  const v = (val) => val ? String(val).replace(/"/g,'&quot;') : '';
+
+  return `
+  ${renderNav("")}
+  <section class="dash">
+    <div class="wrap dash-wrap">
+      ${renderDashSidebar(user.role)}
+      <div class="dash-main">
+
+        <!-- profile banner -->
+        <div class="profile-banner">
+          <div class="profile-banner-bg"></div>
+          <div class="profile-banner-body">
+            <div class="profile-avatar-wrap">
+              <div class="profile-avatar" id="profile-avatar">
+                ${user.photo_url
+                  ? `<img src="${user.photo_url}" alt="${user.name}">`
+                  : `<span class="profile-avatar-initial">${initial}</span>`}
+              </div>
+              <button class="profile-avatar-btn" onclick="document.getElementById('avatar-input').click()" title="Change photo">
+                ${icon('camera')}
+              </button>
+              <input type="file" id="avatar-input" accept="image/*" hidden onchange="handleAvatarUpload(event)">
+            </div>
+            <div class="profile-banner-text">
+              <h2>${user.name}</h2>
+              <div class="profile-meta">
+                <span class="profile-role-pill">${isPT ? 'Personal trainer' : 'Client'}</span>
+                ${user.specialism ? `<span class="profile-meta-item">${user.specialism}</span>` : ''}
+                ${user.city ? `<span class="profile-meta-item">${icon('location')} ${user.city}</span>` : ''}
+              </div>
+            </div>
+          </div>
+          <div id="avatar-status" class="profile-avatar-status" hidden></div>
+        </div>
+
+        <!-- editable details -->
+        <form class="profile-form" onsubmit="handleProfileSave(event)">
+          <div id="profile-message" class="form-success" hidden></div>
+
+          <div class="profile-card">
+            <div class="profile-card-head">
+              <h3>Your details</h3>
+              <p class="muted">This is how you appear ${isPT ? 'to clients browsing for a coach' : 'to trainers you contact'}.</p>
+            </div>
+            <div class="profile-grid">
+              <label class="form-field">
+                <span>Full name</span>
+                <input type="text" name="name" value="${v(user.name)}" required>
+              </label>
+              <label class="form-field">
+                <span>Email address</span>
+                <input type="email" value="${v(user.email)}" disabled>
+                <small class="field-note">Contact support to change your login email</small>
+              </label>
+              <label class="form-field">
+                <span>Phone number</span>
+                <input type="tel" name="phone" value="${v(user.phone)}" placeholder="07700 900123">
+              </label>
+              ${isPT ? `
+              <label class="form-field">
+                <span>Specialism</span>
+                <select name="specialism">
+                  <option value="">Select your specialism</option>
+                  ${SPECIALISMS.map(s => `<option ${user.specialism===s?'selected':''}>${s}</option>`).join('')}
+                </select>
+              </label>` : `
+              <label class="form-field">
+                <span>Main goal</span>
+                <input type="text" name="goals" value="${v(user.goals)}" placeholder="e.g. Build strength, lose weight">
+              </label>`}
+            </div>
+          </div>
+
+          <div class="profile-card">
+            <div class="profile-card-head">
+              <h3>Address</h3>
+              <p class="muted">Used to match you with ${isPT ? 'clients' : 'trainers'} nearby. Only your city is shown publicly.</p>
+            </div>
+            <div class="profile-grid">
+              <label class="form-field profile-field-wide">
+                <span>Address line</span>
+                <input type="text" name="address_line" value="${v(user.address_line)}" placeholder="12 Example Street">
+              </label>
+              <label class="form-field">
+                <span>Town / city</span>
+                <input type="text" name="city" value="${v(user.city)}" placeholder="Nottingham">
+              </label>
+              <label class="form-field">
+                <span>Postcode</span>
+                <input type="text" name="postcode" value="${v(user.postcode)}" placeholder="NG9 8AB">
+              </label>
+            </div>
+          </div>
+
+          <div class="profile-card">
+            <div class="profile-card-head">
+              <h3>${isPT ? 'About you' : 'Your bio'}</h3>
+              <p class="muted">${isPT
+                ? 'Tell clients about your experience, qualifications and training style.'
+                : 'A short intro helps trainers understand what you\'re looking for.'}</p>
+            </div>
+            <label class="form-field">
+              <span>Bio</span>
+              <textarea name="bio" rows="5" maxlength="600" placeholder="${isPT
+                ? 'I\'m a Level 3 qualified PT with 6 years\' experience helping people...'
+                : 'I\'m looking to get back into training after a few years off...'}">${user.bio || ''}</textarea>
+              <small class="field-note">Up to 600 characters</small>
+            </label>
+          </div>
+
+          ${isPT ? `
+          <div class="profile-card">
+            <div class="profile-card-head">
+              <h3>Rates</h3>
+              <p class="muted">What you charge per session. You can add packages later.</p>
+            </div>
+            <div class="profile-grid">
+              <label class="form-field">
+                <span>Price per session (£)</span>
+                <input type="number" name="price" min="0" step="1" value="${v(user.price)}" placeholder="35">
+              </label>
+            </div>
+          </div>` : ''}
+
+          <div class="profile-actions">
+            <button type="submit" class="btn btn-primary btn-lg">Save changes</button>
+          </div>
+        </form>
+
+        <!-- saved trainers (kept from the dashboard) -->
+        <div class="dash-section-head profile-saved-head">
+          <h3>${isPT ? 'Trainers you follow' : 'Your saved trainers'}</h3>
+          <a href="#/search" class="link-arrow">Find more coaches ${icon('arrow')}</a>
+        </div>
+        ${favTrainers.length ? `
+          <div class="tgrid dash-tgrid">
+            ${favTrainers.map(trainerCard).join('')}
+          </div>` : `
+          <div class="dash-empty">
+            <p class="muted">You haven't saved any trainers yet. Browse coaches and tap the heart icon to save them here.</p>
+            <a href="#/search" class="btn btn-primary">Browse coaches</a>
+          </div>`}
+
+      </div>
+    </div>
+  </section>
+  ${renderFooter()}
+  `;
+}
+
+async function handleProfileSave(event){
+  event.preventDefault();
+  const form = event.target;
+  const btn = form.querySelector('button[type="submit"]');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Saving…";
+
+  const fields = {
+    name: form.name.value.trim(),
+    phone: form.phone.value.trim() || null,
+    address_line: form.address_line.value.trim() || null,
+    city: form.city.value.trim() || null,
+    postcode: form.postcode.value.trim() || null,
+    bio: form.bio.value.trim() || null,
+  };
+  if(form.specialism) fields.specialism = form.specialism.value || null;
+  if(form.goals) fields.goals = form.goals.value.trim() || null;
+  if(form.price) fields.price = form.price.value ? Number(form.price.value) : null;
+
+  const result = await AUTH.updateProfile(state.currentUser.id, fields);
+  const msg = document.getElementById('profile-message');
+
+  if(!result.ok){
+    msg.textContent = result.error;
+    msg.className = 'form-error';
+    msg.hidden = false;
+    btn.disabled = false;
+    btn.textContent = original;
+    return;
+  }
+
+  // keep local state in sync so the nav/sidebar update straight away
+  state.currentUser = { ...state.currentUser, ...fields };
+  render();
+
+  const newMsg = document.getElementById('profile-message');
+  if(newMsg){
+    newMsg.textContent = "Profile saved.";
+    newMsg.className = 'form-success';
+    newMsg.hidden = false;
+    setTimeout(() => { if(newMsg) newMsg.hidden = true; }, 3000);
+  }
+}
+
+async function handleAvatarUpload(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const status = document.getElementById('avatar-status');
+  status.textContent = "Uploading photo…";
+  status.className = 'profile-avatar-status';
+  status.hidden = false;
+
+  const result = await AUTH.uploadAvatar(state.currentUser.id, file);
+
+  if(!result.ok){
+    status.textContent = result.error;
+    status.className = 'profile-avatar-status error';
+    return;
+  }
+
+  state.currentUser = { ...state.currentUser, photo_url: result.photoUrl };
+  render();
+}
+
 function renderDashSidebar(role){
   const user = state.currentUser;
+  const currentHash = window.location.hash || "#/";
   const clientLinks = [
-    ["#/client-dashboard","Overview"], ["#/search","Find a PT"],
+    ["#/client-dashboard","Overview"], ["#/profile","My profile"], ["#/search","Find a PT"],
     ["#/client-dashboard","Saved trainers"], ["#/client-dashboard","Bookings"], ["#/client-dashboard","Messages"],
   ];
   const ptLinks = [
-    ["#/pt-dashboard","Overview"], ["#/pt-dashboard","My profile"],
+    ["#/pt-dashboard","Overview"], ["#/profile","My profile"],
     ["#/pt-dashboard","Bookings"], ["#/pt-dashboard","Clients"], ["#/pt-dashboard","Messages"],
   ];
   const links = role === 'pt' ? ptLinks : clientLinks;
   return `
   <aside class="dash-sidebar">
     <div class="dash-user">
-      <span class="dash-user-avatar">${user.name.trim().charAt(0).toUpperCase()}</span>
+      <span class="dash-user-avatar">
+        ${user.photo_url
+          ? `<img src="${user.photo_url}" alt="${user.name}">`
+          : user.name.trim().charAt(0).toUpperCase()}
+      </span>
       <div>
         <div class="dash-user-name">${user.name}</div>
         <div class="dash-user-role">${role === 'pt' ? 'Personal trainer' : 'Client'}</div>
       </div>
     </div>
     <nav class="dash-nav">
-      ${links.map(([href,label],i) => `<a href="${href}" class="${i===0?'active':''}">${label}</a>`).join('')}
+      ${links.map(([href,label],i) => {
+        // highlight the profile link on the profile page, otherwise the first item
+        const isActive = currentHash === "#/profile" ? href === "#/profile" : (href !== "#/profile" && i === 0);
+        return `<a href="${href}" class="${isActive?'active':''}">${label}</a>`;
+      }).join('')}
     </nav>
     <button class="btn btn-outline btn-block" onclick="handleLogout()">Log out</button>
   </aside>`;
@@ -737,6 +1185,11 @@ function render(){
     if(!state.currentUser){ navigateTo('#/login'); return render(); }
     if(state.currentUser.role !== 'pt'){ navigateTo('#/client-dashboard'); return render(); }
     app.innerHTML = renderPTDashboard();
+  } else if(hash === "#/profile"){
+    if(!state.currentUser){ navigateTo('#/login'); return render(); }
+    app.innerHTML = renderProfile();
+  } else if(hash === "#/welcome"){
+    app.innerHTML = renderWelcome();
   } else if(hash.startsWith("#/trainer/")){
     app.innerHTML = renderTrainerProfile(hash.replace("#/trainer/",""));
   } else {
