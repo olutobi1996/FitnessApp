@@ -2,8 +2,29 @@
    PT YOUR WAY — shared UI components
    ============================================================ */
 
+const FAV_KEY = 'ptyw:favourites';
+function loadFavs(){ try{ return new Set(JSON.parse(localStorage.getItem(FAV_KEY) || '[]')); }catch(e){ return new Set(); } }
+function saveFavs(){ try{ localStorage.setItem(FAV_KEY, JSON.stringify([...state.favorites])); }catch(e){} }
+// escape anything a user typed before it goes into HTML (stops script injection)
+function esc(v){ return v == null ? '' : String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+// guarantees name + role exist, so a slow/failed profile fetch can't crash the app
+function normUser(u){
+  if(!u) return null;
+  return { ...u, name: (u.name || '').trim() || (u.email || 'Member').split('@')[0], role: u.role || 'client' };
+}
+function toast(msg){
+  let t = document.getElementById('toast');
+  if(!t){ t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; t.setAttribute('role','status'); document.body.appendChild(t); }
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 3400);
+}
+function requestContact(kind){
+  if(!state.currentUser){ navigateTo('#/login'); return; }
+  toast(kind === 'book' ? "Bookings open soon, we'll let you know the moment they do." : "Messaging opens soon, hang tight.");
+}
+
 const state = {
-  favorites: new Set(["sophie-moore"]),
+  favorites: loadFavs(),
   role: null, // 'client' | 'pt' | 'admin'
   currentUser: null, // set on load from AUTH.getSession()
 };
@@ -148,6 +169,7 @@ function icon(name){
 }
 
 function starRow(rating, reviews){
+  if(rating == null) return `<span class="rating new-pt">New coach</span>`;
   return `<span class="rating"><span class="star">${icon('star')}</span> ${rating.toFixed(1)} <span class="count">(${reviews})</span></span>`;
 }
 
@@ -160,8 +182,8 @@ function renderNav(active){
   const authActions = user
     ? `
       <a href="${user.role === 'pt' ? '#/pt-dashboard' : '#/client-dashboard'}" class="btn btn-outline nav-account">
-        <span class="nav-account-avatar">${user.name.trim().charAt(0).toUpperCase()}</span>
-        ${user.name.split(' ')[0]}
+        <span class="nav-account-avatar">${esc(user.name.trim().charAt(0).toUpperCase())}</span>
+        ${esc(user.name.split(' ')[0])}
       </a>
       <button class="btn btn-primary" onclick="handleLogout()">Log out</button>`
     : `
@@ -202,8 +224,8 @@ function renderMobileMenu(active){
   const accountLinks = !user
     ? [["#/login","Log in"], ["#/signup","Sign up as a client"], ["#/signup-pt","Sign up as a PT"]]
     : user.role === 'pt'
-      ? [["#/pt-dashboard","Dashboard"], ["#/profile","My profile"], ["#/pt-dashboard","Bookings"], ["#/pt-dashboard","Clients"], ["#/pt-dashboard","Messages"]]
-      : [["#/client-dashboard","Dashboard"], ["#/profile","My profile"], ["#/client-dashboard","Saved trainers"], ["#/client-dashboard","Bookings"], ["#/client-dashboard","Messages"]];
+      ? [["#/pt-dashboard","Dashboard"], ["#/profile","My profile"]]
+      : [["#/client-dashboard","Dashboard"], ["#/profile","My profile"], ["#/search","Find a PT"]];
 
   return `
   <div class="mobile-menu" id="mobile-menu" hidden>
@@ -216,9 +238,9 @@ function renderMobileMenu(active){
 
       ${user ? `
         <div class="mobile-menu-user">
-          <span class="mobile-menu-avatar">${user.name.trim().charAt(0).toUpperCase()}</span>
+          <span class="mobile-menu-avatar">${esc(user.name.trim().charAt(0).toUpperCase())}</span>
           <div>
-            <div class="mobile-menu-name">${user.name}</div>
+            <div class="mobile-menu-name">${esc(user.name)}</div>
             <div class="mobile-menu-role">${user.role === 'pt' ? 'Personal trainer' : 'Client'}</div>
           </div>
         </div>` : ''}
@@ -354,25 +376,26 @@ function renderFooter(){
 
 function trainerCard(t){
   const isFav = state.favorites.has(t.id);
+  const hasPrice = t.price != null && t.price !== '';
   return `
-  <article class="tcard" onclick="if(!event.target.closest('.tcard-fav')) navigateTo('#/trainer/${t.id}')">
+  <article class="tcard" onclick="if(!event.target.closest('.tcard-fav')) navigateTo('#/trainer/${esc(t.id)}')">
     <div class="tcard-photo">
-      <img src="${t.photo}" alt="${t.name}" loading="lazy">
-      <button class="tcard-fav ${isFav?'active':''}" onclick="event.stopPropagation(); toggleFavorite('${t.id}')" aria-label="Save trainer">
+      ${t.photo ? `<img src="${esc(t.photo)}" alt="${esc(t.name)}" loading="lazy">` : `<div class="tcard-ph">${esc(t.name.trim().charAt(0).toUpperCase())}</div>`}
+      <button class="tcard-fav ${isFav?'active':''}" onclick="event.stopPropagation(); toggleFavorite('${esc(t.id)}')" aria-label="${isFav ? 'Remove from saved' : 'Save trainer'}">
         ${isFav ? icon('heartFill') : icon('heart')}
       </button>
       ${t.verified ? `<span class="tcard-verified">${icon('shield')} Verified</span>` : ''}
     </div>
     <div class="tcard-body">
-      <div class="tcard-name">${t.name}</div>
-      <div class="tcard-spec">${t.specialism}</div>
+      <div class="tcard-name">${esc(t.name)}</div>
+      <div class="tcard-spec">${esc(t.specialism)}</div>
       <div class="tcard-badges">
         <span class="badge online">${t.online ? 'Online' : 'In Person'}</span>
-        <span class="badge">${t.tags[0]}</span>
+        <span class="badge">${esc(t.city || t.tags[0])}</span>
       </div>
       <div class="tcard-foot">
         ${starRow(t.rating, t.reviews)}
-        <span class="price">£${t.price} <small>/ ${t.services && t.services[0] ? t.services[0].unit : 'month'}</small></span>
+        <span class="price">${hasPrice ? `£${esc(t.price)} <small>/ session</small>` : '<small>Rates on request</small>'}</span>
       </div>
     </div>
   </article>`;
@@ -381,6 +404,7 @@ function trainerCard(t){
 function toggleFavorite(id){
   if(state.favorites.has(id)) state.favorites.delete(id);
   else state.favorites.add(id);
+  saveFavs();
   render();
 }
 
@@ -422,6 +446,86 @@ const SPECIALISMS = [
    PAGE: HOME
    ============================================================ */
 
+/* Real trainers come from the public_trainers view (see supabase-public-trainers.sql).
+   Set SHOW_DEMO_TRAINERS to false on launch day to remove the fake coaches. */
+const SHOW_DEMO_TRAINERS = true;
+let ALL_TRAINERS = SHOW_DEMO_TRAINERS ? [...TRAINERS] : [];
+
+async function loadTrainers(){
+  try{
+    const { data, error } = await sb.from('public_trainers').select('*');
+    if(error || !data) return;
+    const real = data.filter(p => p.name).map(p => ({
+      id:p.id, name:p.name, specialism:p.specialism || 'Personal Trainer', tags:[p.specialism || 'Personal Training'],
+      online:true, verified:false, rating:null, reviews:0, price:p.price, city:p.city, bio:p.bio, photo:p.photo_url || '',
+    }));
+    ALL_TRAINERS = [...real, ...(SHOW_DEMO_TRAINERS ? TRAINERS : [])];
+  }catch(e){ /* offline or view not created yet: demo coaches still show */ }
+}
+
+const BUDGETS = { 'Up to £40':[0,40], '£40 – £60':[40,60], '£60 – £80':[60,80], '£80+':[80,Infinity] };
+
+// builds the #/search?... url from either the home search bar or the search page filters
+function runSearch(f, fromHome){
+  const g = n => f[n] ? f[n].value.trim() : '';
+  const p = new URLSearchParams();
+  [['q', g('q')], ['spec', g('spec') || g('goal')], ['budget', g('budget')], ['sort', g('sort') === 'rating' ? '' : g('sort')]]
+    .forEach(([k,v]) => { if(v) p.set(k, v); });
+  const h = '#/search' + (p.toString() ? '?' + p.toString() : '');
+  if(fromHome){ navigateTo(h); return; }
+  history.replaceState(null, '', h);
+  render();
+}
+
+function renderSearch(params){
+  const q = params.get('q') || '', spec = params.get('spec') || '', budget = params.get('budget') || '', sort = params.get('sort') || 'rating';
+  const [lo, hi] = BUDGETS[budget] || [0, Infinity];
+  const words = spec.toLowerCase().split(/[^a-z]+/).filter(w => w.length > 3);
+  const num = x => (x == null || x === '') ? null : Number(x);
+  const list = ALL_TRAINERS.filter(t => {
+    const hay = [t.name, t.specialism, ...t.tags, t.city || '', t.online ? 'online' : 'in person'].join(' ').toLowerCase();
+    if(q && !hay.includes(q.toLowerCase())) return false;
+    if(words.length && !words.some(w => hay.includes(w))) return false;
+    if(budget){ const p = num(t.price); if(p == null || p < lo || p > hi) return false; }
+    return true;
+  }).sort((a,b) => sort === 'low' ? (num(a.price) ?? 1e9) - (num(b.price) ?? 1e9)
+                 : sort === 'high' ? (num(b.price) ?? -1) - (num(a.price) ?? -1)
+                 : (b.rating ?? -1) - (a.rating ?? -1));
+  const filtered = q || spec || budget;
+  return `
+  ${renderNav("Find a PT")}
+  <section class="sp">
+    <div class="wrap">
+      <div class="sp-head">
+        <span class="eyebrow">Find your coach</span>
+        <h1>Personal trainers</h1>
+      </div>
+      <form class="sp-filters" onsubmit="event.preventDefault(); runSearch(this)">
+        <label class="search-field sp-q"><span class="field-icon">${icon('search')}</span>
+          <input type="search" name="q" value="${esc(q)}" placeholder="Search by name, goal or city" aria-label="Search"></label>
+        <label class="form-field"><span>Specialism</span>
+          <select name="spec" onchange="runSearch(this.form)"><option value="">All specialisms</option>
+          ${SPECIALISMS.map(s => `<option ${spec===s?'selected':''}>${s}</option>`).join('')}</select></label>
+        <label class="form-field"><span>Budget</span>
+          <select name="budget" onchange="runSearch(this.form)"><option value="">Any budget</option>
+          ${Object.keys(BUDGETS).map(b => `<option ${budget===b?'selected':''}>${b}</option>`).join('')}</select></label>
+        <label class="form-field"><span>Sort by</span>
+          <select name="sort" onchange="runSearch(this.form)">
+            <option value="rating" ${sort==='rating'?'selected':''}>Top rated</option>
+            <option value="low" ${sort==='low'?'selected':''}>Price: low to high</option>
+            <option value="high" ${sort==='high'?'selected':''}>Price: high to low</option></select></label>
+        <button type="submit" class="btn btn-primary">Search</button>
+      </form>
+      <div class="sp-count"><strong>${list.length}</strong> coach${list.length === 1 ? '' : 'es'} found
+        ${filtered ? `<a href="#/search" class="inline-link">Clear filters</a>` : ''}</div>
+      ${list.length ? `<div class="tgrid">${list.map(trainerCard).join('')}</div>` : `
+        <div class="dash-empty"><p class="muted">No coaches match those filters yet. Try a different specialism or a wider budget.</p>
+        <a href="#/search" class="btn btn-primary">Show all coaches</a></div>`}
+    </div>
+  </section>
+  ${renderFooter()}`;
+}
+
 function renderHome(){
   return `
   ${renderNav("")}
@@ -443,20 +547,20 @@ function renderHome(){
   </section>
 
   <div class="wrap search-card">
-    <form class="search-bar" onsubmit="event.preventDefault(); navigateTo('#/search');">
+    <form class="search-bar" onsubmit="event.preventDefault(); runSearch(this, true);">
       <label class="search-field">
         <span class="field-icon">${icon('search')}</span>
-        <input type="text" placeholder="What are you looking for?">
+        <input type="text" name="q" placeholder="What are you looking for?" aria-label="Search coaches">
       </label>
       <div class="search-filters-row">
         <label class="search-field divider">
-          <select><option value="">Goal</option>${SPECIALISMS.slice(0,8).map(s=>`<option>${s}</option>`).join('')}</select>
+          <select name="goal" aria-label="Goal"><option value="">Goal</option>${SPECIALISMS.slice(0,8).map(s=>`<option>${s}</option>`).join('')}</select>
         </label>
         <label class="search-field divider">
-          <select><option value="">Specialism</option>${SPECIALISMS.map(s=>`<option>${s}</option>`).join('')}</select>
+          <select name="spec" aria-label="Specialism"><option value="">Specialism</option>${SPECIALISMS.map(s=>`<option>${s}</option>`).join('')}</select>
         </label>
         <label class="search-field divider">
-          <select><option value="">Budget</option><option>Up to £40</option><option>£40 – £60</option><option>£60 – £80</option><option>£80+</option></select>
+          <select name="budget" aria-label="Budget"><option value="">Budget</option><option>Up to £40</option><option>£40 – £60</option><option>£60 – £80</option><option>£80+</option></select>
         </label>
       </div>
       <button type="submit" class="btn btn-primary">
@@ -478,7 +582,7 @@ function renderHome(){
         <a href="#/search" class="link-arrow">View all coaches ${icon('arrow')}</a>
       </div>
       <div class="tgrid">
-        ${TRAINERS.map(trainerCard).join('')}
+        ${ALL_TRAINERS.slice(0,8).map(trainerCard).join('')}
       </div>
       <div class="view-all-wrap">
         <a href="#/search" class="btn btn-outline btn-lg">View all coaches</a>
@@ -542,29 +646,45 @@ function renderPlaceholder(title, blurb, activeLink){
 }
 
 function renderTrainerProfile(id){
-  const t = TRAINERS.find(x => x.id === id);
-  if(!t) return renderPlaceholder("Coach not found", "We couldn't find that trainer profile.");
+  const t = ALL_TRAINERS.find(x => x.id === id);
+  if(!t) return renderPlaceholder("Coach not found", "We couldn't find that trainer profile.", "Find a PT");
+  const isFav = state.favorites.has(t.id);
+  const hasPrice = t.price != null && t.price !== '';
   return `
-  ${renderNav("")}
-  <section class="placeholder-page wrap" style="text-align:left; padding-top:64px;">
-    <div style="display:flex; gap:32px; align-items:flex-start; flex-wrap:wrap;">
-      <img src="${t.photo}" alt="${t.name}" style="width:220px; height:220px; object-fit:cover; border-radius:20px;">
-      <div>
-        <h2 style="margin-bottom:6px;">${t.name}</h2>
-        <p class="muted" style="margin-bottom:14px;">${t.specialism}</p>
-        ${starRow(t.rating, t.reviews)}
-        <p style="margin-top:24px; max-width:520px; color:var(--ink-soft); line-height:1.6;">
-          Full profile — bio, qualifications, gallery, pricing packages and booking are coming soon to this page.
-        </p>
-        <div style="display:flex; gap:12px; margin-top:24px;">
-          <button class="btn btn-primary">Book consultation</button>
-          <button class="btn btn-outline">Message</button>
+  ${renderNav("Find a PT")}
+  <section class="tp">
+    <div class="wrap">
+      <a href="#/search" class="tp-back">← Back to coaches</a>
+      <div class="tp-grid">
+        <div class="tp-main">
+          <div class="profile-card tp-head">
+            <div class="tp-photo">${t.photo ? `<img src="${esc(t.photo)}" alt="${esc(t.name)}">` : `<div class="tcard-ph">${esc(t.name.trim().charAt(0).toUpperCase())}</div>`}</div>
+            <div>
+              <h1>${esc(t.name)}</h1>
+              <p class="muted">${esc(t.specialism)}</p>
+              <div class="tcard-badges">
+                <span class="badge online">${t.online ? 'Online' : 'In Person'}</span>
+                ${t.city ? `<span class="badge">${icon('location')} ${esc(t.city)}</span>` : ''}
+                ${t.verified ? `<span class="badge online">${icon('shield')} Verified</span>` : ''}
+              </div>
+              ${starRow(t.rating, t.reviews)}
+            </div>
+          </div>
+          <div class="profile-card">
+            <div class="profile-card-head"><h3>About ${esc(t.name.split(' ')[0])}</h3></div>
+            <p class="tp-bio">${t.bio ? esc(t.bio) : 'This coach is still completing their profile.'}</p>
+          </div>
         </div>
+        <aside class="profile-card tp-side">
+          <div class="tp-price">${hasPrice ? `£${esc(t.price)} <small>/ session</small>` : 'Rates on request'}</div>
+          <button class="btn btn-primary btn-block btn-lg" onclick="requestContact('book')">Book consultation</button>
+          <button class="btn btn-outline btn-block" onclick="requestContact('message')">${icon('chat')} Message</button>
+          <button class="btn btn-outline btn-block" onclick="toggleFavorite('${esc(t.id)}')">${isFav ? icon('heartFill') + ' Saved' : icon('heart') + ' Save coach'}</button>
+        </aside>
       </div>
     </div>
   </section>
-  ${renderFooter()}
-  `;
+  ${renderFooter()}`;
 }
 
 /* ============================================================
@@ -659,7 +779,7 @@ async function handleSignup(event, role){
     return;
   }
 
-  state.currentUser = result.user;
+  state.currentUser = normUser(result.user);
   navigateTo(role === 'pt' ? '#/pt-dashboard' : '#/client-dashboard');
   render();
 }
@@ -673,7 +793,7 @@ function renderCheckInbox(email){
       <div class="auth-card auth-card-center">
         <div class="inbox-icon">${icon('mail')}</div>
         <h2>Check your inbox</h2>
-        <p class="muted">We've sent a confirmation link to <strong>${email}</strong>. Click it to activate your account and get started.</p>
+        <p class="muted">We've sent a confirmation link to <strong>${esc(email)}</strong>. Click it to activate your account and get started.</p>
         <div class="inbox-note">
           <p class="muted">Can't find it? Check your spam or junk folder — confirmation emails sometimes land there.</p>
         </div>
@@ -694,7 +814,7 @@ function renderWelcome(){
     <div class="wrap auth-wrap">
       <div class="auth-card auth-card-center">
         <div class="inbox-icon inbox-icon-success">${icon('check')}</div>
-        <h2>Welcome to PT Your Way${user ? ', ' + user.name.split(' ')[0] : ''}!</h2>
+        <h2>Welcome to PT Your Way${user ? ', ' + esc(user.name.split(' ')[0]) : ''}!</h2>
         <p class="muted">Your email is confirmed and your account is ready to go.</p>
         <div class="welcome-steps">
           <div class="welcome-step">
@@ -778,7 +898,7 @@ async function handleLogin(event){
     submitBtn.textContent = originalLabel;
     return;
   }
-  state.currentUser = result.user;
+  state.currentUser = normUser(result.user);
   navigateTo(result.user.role === 'pt' ? '#/pt-dashboard' : '#/client-dashboard');
   render();
 }
@@ -789,7 +909,7 @@ async function handleLogin(event){
 
 function renderClientDashboard(){
   const user = state.currentUser;
-  const favTrainers = TRAINERS.filter(t => state.favorites.has(t.id));
+  const favTrainers = ALL_TRAINERS.filter(t => state.favorites.has(t.id));
   return `
   ${renderNav("")}
   <section class="dash">
@@ -797,7 +917,7 @@ function renderClientDashboard(){
       ${renderDashSidebar('client')}
       <div class="dash-main">
         <div class="dash-welcome">
-          <h2>Welcome back, ${user.name.split(' ')[0]}</h2>
+          <h2>Welcome back, ${esc(user.name.split(' ')[0])}</h2>
           <p class="muted">Pick up where you left off, or find a new coach. <a href="#/profile" class="inline-link">View your profile</a></p>
         </div>
 
@@ -848,8 +968,8 @@ function renderPTDashboard(){
       ${renderDashSidebar('pt')}
       <div class="dash-main">
         <div class="dash-welcome">
-          <h2>Welcome back, ${user.name.split(' ')[0]}</h2>
-          <p class="muted">${user.specialism || 'Manage your profile and bookings.'}</p>
+          <h2>Welcome back, ${esc(user.name.split(' ')[0])}</h2>
+          <p class="muted">${esc(user.specialism) || 'Manage your profile and bookings.'}</p>
         </div>
 
         <div class="dash-cards">
@@ -889,9 +1009,9 @@ function renderPTDashboard(){
 function renderProfile(){
   const user = state.currentUser;
   const isPT = user.role === 'pt';
-  const favTrainers = TRAINERS.filter(t => state.favorites.has(t.id));
-  const initial = user.name.trim().charAt(0).toUpperCase();
-  const v = (val) => val ? String(val).replace(/"/g,'&quot;') : '';
+  const favTrainers = ALL_TRAINERS.filter(t => state.favorites.has(t.id));
+  const initial = esc(user.name.trim().charAt(0).toUpperCase());
+  const v = esc;
 
   return `
   ${renderNav("")}
@@ -907,7 +1027,7 @@ function renderProfile(){
             <div class="profile-avatar-wrap">
               <div class="profile-avatar" id="profile-avatar">
                 ${user.photo_url
-                  ? `<img src="${user.photo_url}" alt="${user.name}">`
+                  ? `<img src="${esc(user.photo_url)}" alt="${esc(user.name)}">`
                   : `<span class="profile-avatar-initial">${initial}</span>`}
               </div>
               <button class="profile-avatar-btn" onclick="document.getElementById('avatar-input').click()" title="Change photo">
@@ -916,11 +1036,11 @@ function renderProfile(){
               <input type="file" id="avatar-input" accept="image/*" hidden onchange="handleAvatarUpload(event)">
             </div>
             <div class="profile-banner-text">
-              <h2>${user.name}</h2>
+              <h2>${esc(user.name)}</h2>
               <div class="profile-meta">
                 <span class="profile-role-pill">${isPT ? 'Personal trainer' : 'Client'}</span>
-                ${user.specialism ? `<span class="profile-meta-item">${user.specialism}</span>` : ''}
-                ${user.city ? `<span class="profile-meta-item">${icon('location')} ${user.city}</span>` : ''}
+                ${user.specialism ? `<span class="profile-meta-item">${esc(user.specialism)}</span>` : ''}
+                ${user.city ? `<span class="profile-meta-item">${icon('location')} ${esc(user.city)}</span>` : ''}
               </div>
             </div>
           </div>
@@ -997,7 +1117,7 @@ function renderProfile(){
               <span>Bio</span>
               <textarea name="bio" rows="5" maxlength="600" placeholder="${isPT
                 ? 'I\'m a Level 3 qualified PT with 6 years\' experience helping people...'
-                : 'I\'m looking to get back into training after a few years off...'}">${user.bio || ''}</textarea>
+                : 'I\'m looking to get back into training after a few years off...'}">${esc(user.bio)}</textarea>
               <small class="field-note">Up to 600 characters</small>
             </label>
           </div>
@@ -1112,11 +1232,9 @@ function renderDashSidebar(role){
   const currentHash = window.location.hash || "#/";
   const clientLinks = [
     ["#/client-dashboard","Overview"], ["#/profile","My profile"], ["#/search","Find a PT"],
-    ["#/client-dashboard","Saved trainers"], ["#/client-dashboard","Bookings"], ["#/client-dashboard","Messages"],
   ];
   const ptLinks = [
     ["#/pt-dashboard","Overview"], ["#/profile","My profile"],
-    ["#/pt-dashboard","Bookings"], ["#/pt-dashboard","Clients"], ["#/pt-dashboard","Messages"],
   ];
   const links = role === 'pt' ? ptLinks : clientLinks;
   return `
@@ -1124,18 +1242,18 @@ function renderDashSidebar(role){
     <div class="dash-user">
       <span class="dash-user-avatar">
         ${user.photo_url
-          ? `<img src="${user.photo_url}" alt="${user.name}">`
-          : user.name.trim().charAt(0).toUpperCase()}
+          ? `<img src="${esc(user.photo_url)}" alt="${esc(user.name)}">`
+          : esc(user.name.trim().charAt(0).toUpperCase())}
       </span>
       <div>
-        <div class="dash-user-name">${user.name}</div>
+        <div class="dash-user-name">${esc(user.name)}</div>
         <div class="dash-user-role">${role === 'pt' ? 'Personal trainer' : 'Client'}</div>
       </div>
     </div>
     <nav class="dash-nav">
       ${links.map(([href,label],i) => {
         // highlight the profile link on the profile page, otherwise the first item
-        const isActive = currentHash === "#/profile" ? href === "#/profile" : (href !== "#/profile" && i === 0);
+        const isActive = href === currentHash.split('?')[0];
         return `<a href="${href}" class="${isActive?'active':''}">${label}</a>`;
       }).join('')}
     </nav>
@@ -1149,12 +1267,13 @@ function renderDashSidebar(role){
 
 function render(){
   const app = document.getElementById('app');
-  const hash = window.location.hash || "#/";
+  const [hash, query] = (window.location.hash || "#/").split('?');
+  const params = new URLSearchParams(query || '');
 
   if(hash === "#/" || hash === ""){
     app.innerHTML = renderHome();
   } else if(hash === "#/search"){
-    app.innerHTML = renderPlaceholder("Find a PT", "Full search & filtering is coming soon. In the meantime, browse coaches from the homepage.", "Find a PT");
+    app.innerHTML = renderSearch(params);
   } else if(hash === "#/how-it-works"){
     app.innerHTML = renderPlaceholder("How it works", "A step-by-step guide to finding, booking and training with your coach.", "How It Works");
   } else if(hash === "#/for-pts"){
@@ -1200,7 +1319,9 @@ function render(){
 async function initApp(){
   // restore an existing session (if the person is already logged in) before
   // the first render, so the nav/dashboard shows the right state immediately
-  state.currentUser = await AUTH.getSession();
+  state.currentUser = normUser(await AUTH.getSession());
+  // load real trainers first (max 2.5s) so profile links open straight away
+  await Promise.race([loadTrainers(), new Promise(r => setTimeout(r, 2500))]);
   render();
 }
 
