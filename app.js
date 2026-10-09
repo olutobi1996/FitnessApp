@@ -18,9 +18,13 @@ function toast(msg){
   t.textContent = msg; t.classList.add('show');
   clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 3400);
 }
+function requestContact(kind){
+  if(!state.currentUser){ navigateTo('#/login'); return; }
+  toast(kind === 'book' ? "Bookings open soon, we'll let you know the moment they do." : "Messaging opens soon, hang tight.");
+}
+
 const state = {
   favorites: loadFavs(),
-  stats: { pending:0, accepted:0, unread:0 },
   role: null, // 'client' | 'pt' | 'admin'
   currentUser: null, // set on load from AUTH.getSession()
 };
@@ -34,11 +38,6 @@ const SUPABASE_URL = "https://ifxkdihhjzuulysbwchk.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_rEK56aZHSZ6rJ2x6UnyMkQ_FLZunsQu";
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-// password-reset emails sign the person in briefly; send them to the "new password" page
-sb.auth.onAuthStateChange((ev) => {
-  if(ev === 'PASSWORD_RECOVERY'){ state.recovery = true; if(state.ready) navigateTo('#/reset-password'); }
-});
 
 /* ============================================================
    AUTH — backed by Supabase Auth + a "profiles" table
@@ -225,8 +224,8 @@ function renderMobileMenu(active){
   const accountLinks = !user
     ? [["#/login","Log in"], ["#/signup","Sign up as a client"], ["#/signup-pt","Sign up as a PT"]]
     : user.role === 'pt'
-      ? [["#/pt-dashboard","Dashboard"], ["#/bookings","Bookings"], ["#/messages","Messages"], ["#/profile","My profile"]]
-      : [["#/client-dashboard","Dashboard"], ["#/bookings","Bookings"], ["#/messages","Messages"], ["#/profile","My profile"]];
+      ? [["#/pt-dashboard","Dashboard"], ["#/profile","My profile"]]
+      : [["#/client-dashboard","Dashboard"], ["#/profile","My profile"], ["#/search","Find a PT"]];
 
   return `
   <div class="mobile-menu" id="mobile-menu" hidden>
@@ -301,8 +300,6 @@ window.addEventListener('keydown', e => { if(e.key === 'Escape') closeMobileMenu
 async function handleLogout(){
   await AUTH.logout();
   state.currentUser = null;
-  state.favorites = new Set(); saveFavs();
-  state.stats = { pending:0, accepted:0, unread:0 };
   navigateTo('#/');
   render();
 }
@@ -348,7 +345,7 @@ function renderFooter(){
           <h5>Trainers</h5>
           <ul>
             <li><a href="#/for-pts">Join as a PT</a></li>
-            
+            <li><a href="#/for-pts">Pricing</a></li>
             <li><a href="#/pt-dashboard">PT dashboard</a></li>
           </ul>
         </div>
@@ -356,16 +353,16 @@ function renderFooter(){
           <h5>Company</h5>
           <ul>
             <li><a href="#/about">About</a></li>
-            
-            <li><a href="#/contact">Contact</a></li>
+            <li><a href="#/">Careers</a></li>
+            <li><a href="#/">Contact</a></li>
           </ul>
         </div>
         <div>
           <h5>Legal</h5>
           <ul>
-            <li><a href="#/terms">Terms</a></li>
-            <li><a href="#/privacy">Privacy</a></li>
-            <li><a href="#/safety">Safety</a></li>
+            <li><a href="#/">Terms</a></li>
+            <li><a href="#/">Privacy</a></li>
+            <li><a href="#/">Safety</a></li>
           </ul>
         </div>
       </div>
@@ -408,12 +405,6 @@ function toggleFavorite(id){
   if(state.favorites.has(id)) state.favorites.delete(id);
   else state.favorites.add(id);
   saveFavs();
-  const u = state.currentUser;
-  if(u && isUuid(id)){
-    (state.favorites.has(id)
-      ? sb.from('favourites').upsert({ user_id:u.id, trainer_id:id })
-      : sb.from('favourites').delete().eq('user_id', u.id).eq('trainer_id', id)).then(() => {});
-  }
   render();
 }
 
@@ -466,7 +457,7 @@ async function loadTrainers(){
     if(error || !data) return;
     const real = data.filter(p => p.name).map(p => ({
       id:p.id, name:p.name, specialism:p.specialism || 'Personal Trainer', tags:[p.specialism || 'Personal Training'],
-      online:p.online !== false, verified:!!p.verified, rating:(p.reviews_count > 0 ? Number(p.rating) : null), reviews:p.reviews_count || 0, price:p.price, city:p.city, bio:p.bio, photo:p.photo_url || '',
+      online:true, verified:false, rating:null, reviews:0, price:p.price, city:p.city, bio:p.bio, photo:p.photo_url || '',
     }));
     ALL_TRAINERS = [...real, ...(SHOW_DEMO_TRAINERS ? TRAINERS : [])];
   }catch(e){ /* offline or view not created yet: demo coaches still show */ }
@@ -624,7 +615,7 @@ function renderHome(){
       <div class="cta-band">
         <div>
           <h3>Are you a personal trainer? Grow your business with PT Your Way.</h3>
-          <p>List your services, reach new clients and manage bookings — all in one place.</p>
+          <p>List your services, reach new clients and manage bookings, all in one place.</p>
         </div>
         <div class="cta-actions">
           <a href="#/for-pts" class="btn btn-outline">Learn more</a>
@@ -641,6 +632,159 @@ function renderHome(){
 /* ============================================================
    PAGE: generic placeholder (for routes not yet built out)
    ============================================================ */
+
+/* ============================================================
+   PAGES: How it works, For PTs, About
+   ============================================================ */
+
+function pgHero(eyebrow, title, sub, actions){
+  return `<section class="pg-hero"><div class="wrap">
+    <span class="eyebrow">${eyebrow}</span><h1>${title}</h1><p>${sub}</p>
+    <div class="pg-actions">${actions}</div></div></section>`;
+}
+function pgHead(eyebrow, title, sub){
+  return `<div class="pg-head"><span class="eyebrow">${eyebrow}</span><h2>${title}</h2>${sub ? `<p>${sub}</p>` : ''}</div>`;
+}
+function pgFeats(items){
+  return `<div class="pg-feats">${items.map(([ic, t, p]) => `
+    <div class="pg-feat"><span class="feat-icon">${icon(ic)}</span><h4>${t}</h4><p>${p}</p></div>`).join('')}</div>`;
+}
+function pgSteps(items){
+  return `<div class="pg-steps">${items.map(([t, p], i) => `
+    <div class="pg-step"><span class="pg-num">${i + 1}</span><h4>${t}</h4><p>${p}</p></div>`).join('')}</div>`;
+}
+function pgList(items){
+  return `<ul class="pg-list">${items.map(x => `<li><span>${icon('check')}</span>${x}</li>`).join('')}</ul>`;
+}
+function pgCta(title, sub, a, b){
+  return `<section class="section"><div class="wrap"><div class="cta-band">
+    <div><h3>${title}</h3><p>${sub}</p></div>
+    <div class="cta-actions">
+      <a href="${b[0]}" class="btn btn-outline">${b[1]}</a>
+      <a href="${a[0]}" class="btn btn-primary">${a[1]}</a>
+    </div></div></div></section>`;
+}
+
+function renderHowItWorks(){
+  const faq = [
+    ['Is it free to join as a client?', 'Yes. Joining is free for clients. You only pay your coach the price shown on their profile.'],
+    ['Can I train online?', 'Yes. Many coaches train clients online from anywhere in the world, and some also offer in person sessions. You can see which on every coach profile.'],
+    ['How do I pay my coach?', 'You agree sessions and payment directly with your coach, at the price they list. There are no booking fees added on top.'],
+    ['Can I get nutrition or diet advice?', 'Many coaches offer nutrition guidance and diet plans. Message them before you book and ask what they can help with.'],
+  ];
+  return `
+  ${renderNav("How It Works")}
+  ${pgHero('How it works', 'Find your coach. Train your way.',
+    'A step-by-step guide to finding, booking and training with your coach.',
+    `<a href="#/search" class="btn btn-primary btn-lg">Find a coach</a><a href="#/" class="btn btn-outline btn-lg">Back to home</a>`)}
+  <section class="pg-section"><div class="wrap">
+    ${pgHead('For clients', 'Four simple steps', 'No contracts and no sales calls. Just you and a coach who fits.')}
+    ${pgSteps([
+      ['Search and compare', 'Browse coaches by goal, specialism, budget and location. Read their profiles and reviews from real clients.'],
+      ['Request a consultation', 'Tell your coach what you want to achieve and when suits you. They accept or decline from their own dashboard.'],
+      ['Chat before you commit', 'Message your coach to ask about training, nutrition and diet plans. Get honest advice from a real person.'],
+      ['Train and review', 'Train online or in person, at your pace. After an accepted consultation, leave a review to help the next client.'],
+    ])}
+  </div></section>
+  <section class="pg-section pg-soft"><div class="wrap">
+    ${pgHead('Why it feels different', 'Personal training without the corporate price tag')}
+    ${pgFeats([
+      ['users', 'Real coaches, not chains', 'Every coach runs their own business, so you work with an individual who coaches in their own style, not a script.'],
+      ['target', 'Honest, upfront prices', 'Coaches set their own rates and show them on their profile. Without big gym overheads, prices are fairer and the value is higher.'],
+      ['chat', 'Advice on tap', 'Talk to coaches before you book. Ask about training, diet plans and what suits your lifestyle, whether you train online or in person.'],
+    ])}
+  </div></section>
+  <section class="pg-section"><div class="wrap pg-narrow">
+    ${pgHead('Questions', 'Good to know')}
+    <div class="pg-faq">${faq.map(([q, a]) => `<details><summary>${q}</summary><p>${a}</p></details>`).join('')}</div>
+  </div></section>
+  ${pgCta('Are you a personal trainer?', 'List your services, reach clients worldwide and train your way.', ['#/signup-pt', 'Join as a PT'], ['#/for-pts', 'Learn more'])}
+  ${renderFooter()}`;
+}
+
+function renderForPTs(){
+  return `
+  ${renderNav("For PTs")}
+  ${pgHero('For personal trainers', 'Your business. Your prices. Your way.',
+    'List your services, manage bookings and grow your client base.',
+    `<a href="#/signup-pt" class="btn btn-primary btn-lg">Join as a PT</a><a href="#/how-it-works" class="btn btn-outline btn-lg">See how it works</a>`)}
+  <section class="pg-section"><div class="wrap">
+    ${pgHead('Why coaches choose us', 'Be independent without being alone', 'You do the coaching. We help the right clients find you.')}
+    ${pgFeats([
+      ['users', 'No gym attached', 'You are not tied to a gym floor, desk fees or one location. Coach from wherever suits you, in person or online.'],
+      ['target', 'You set your price', 'Choose what you charge. Clients pay the price on your profile, so you are not squeezed by big chain rates.'],
+      ['chat', 'Clients worldwide', 'Coach online and be found by clients far beyond your local area. Your next client could be anywhere.'],
+      ['check', 'One small subscription', 'Pay a small subscription to be listed, instead of high overheads and revenue shared with a corporate gym.'],
+      ['star', 'Build a reputation you own', 'Reviews from real clients stay on your profile. Your results and your name are what people see.'],
+      ['shield', 'Stay in control', 'Accept or decline requests, message clients directly and update your profile whenever you like.'],
+    ])}
+  </div></section>
+  <section class="pg-section pg-soft"><div class="wrap">
+    ${pgHead('The difference', 'Corporate gym versus PT Your Way')}
+    <div class="pg-compare">
+      <div class="pg-col"><h4>The corporate gym world</h4><ul class="pg-list pg-muted">
+        <li><span>×</span>High fees and rent before you earn</li>
+        <li><span>×</span>Tied to one building and its rules</li>
+        <li><span>×</span>Clients belong to the brand, not to you</li>
+        <li><span>×</span>Prices set by head office</li></ul></div>
+      <div class="pg-col pg-col-brand"><h4>PT Your Way</h4>${pgList([
+        'One small subscription, nothing more to get listed',
+        'Coach online or in person, wherever you are',
+        'Your profile, your reviews, your reputation',
+        'You set your own prices and style'])}</div>
+    </div>
+  </div></section>
+  <section class="pg-section"><div class="wrap">
+    ${pgHead('Get started', 'Up and running in minutes')}
+    ${pgSteps([
+      ['Create your account', 'Sign up as a personal trainer with your name, email and a password.'],
+      ['Build your profile', 'Add your specialism, bio, photo, location and price so clients know what you offer.'],
+      ['Receive requests', 'Clients send consultation requests. Accept the ones that fit and chat with them directly.'],
+    ])}
+  </div></section>
+  ${pgCta('Ready to do it your way?', 'Join coaches who are building their own business, free from big gym prices.', ['#/signup-pt', 'Join as a PT'], ['#/how-it-works', 'See how it works'])}
+  ${renderFooter()}`;
+}
+
+function renderAbout(){
+  return `
+  ${renderNav("About")}
+  ${pgHero('About PT Your Way', 'Fitness for people, not corporations',
+    'We connect clients with qualified, verified personal trainers, online or in person.',
+    `<a href="#/search" class="btn btn-primary btn-lg">Find a coach</a><a href="#/for-pts" class="btn btn-outline btn-lg">Join as a PT</a>`)}
+  <section class="pg-section"><div class="wrap pg-narrow pg-story">
+    ${pgHead('Our story', 'Why we built it')}
+    <p>Personal training has drifted into the hands of big chains and high prices. Great coaches are held back by gym fees and contracts, and many clients are priced out of the support they need.</p>
+    <p>PT Your Way puts the two back together. Coaches are free to work their own way, clients get fair prices and real advice, and everyone gets to be an individual instead of a number.</p>
+  </div></section>
+  <section class="pg-section pg-soft"><div class="wrap">
+    ${pgHead('Value for both sides', 'Better for clients. Better for coaches.')}
+    <div class="pg-compare">
+      <div class="pg-col"><h4>For clients</h4>${pgList([
+        'Fairer prices without big gym overheads',
+        'Choose from coaches anywhere in the world',
+        'Talk to a coach first and get advice on training and diet plans',
+        'Train online from home or in person',
+        'You pay what your coach charges, nothing hidden'])}</div>
+      <div class="pg-col pg-col-brand"><h4>For personal trainers</h4>${pgList([
+        'No gym ties, no desk fees, no head office rules',
+        'One small subscription to be listed',
+        'Set your own prices and keep your independence',
+        'Reach clients worldwide, even online only',
+        'Build your own reputation with real reviews'])}</div>
+    </div>
+  </div></section>
+  <section class="pg-section"><div class="wrap">
+    ${pgHead('What we believe', 'Three things we stand for')}
+    ${pgFeats([
+      ['users', 'Individual', 'Every coach and every client is different. We make it easy to find the match that suits you, not the one a chain pushes.'],
+      ['target', 'Fair', 'Lower overheads mean better prices for clients and a better living for coaches. Value should go to the people doing the work.'],
+      ['chat', 'Open to everyone', 'Training should not depend on where you live. Coaches and clients can connect worldwide and train their way.'],
+    ])}
+  </div></section>
+  ${pgCta('Do it your way', 'Whether you want a coach or want to be one, start in minutes.', ['#/search', 'Find a coach'], ['#/signup-pt', 'Join as a PT'])}
+  ${renderFooter()}`;
+}
 
 function renderPlaceholder(title, blurb, activeLink){
   return `
@@ -683,15 +827,11 @@ function renderTrainerProfile(id){
             <div class="profile-card-head"><h3>About ${esc(t.name.split(' ')[0])}</h3></div>
             <p class="tp-bio">${t.bio ? esc(t.bio) : 'This coach is still completing their profile.'}</p>
           </div>
-          <div class="profile-card">
-            <div class="profile-card-head"><h3>Reviews</h3></div>
-            <div id="reviews"><p class="muted">Loading…</p></div>
-          </div>
         </div>
         <aside class="profile-card tp-side">
           <div class="tp-price">${hasPrice ? `£${esc(t.price)} <small>/ session</small>` : 'Rates on request'}</div>
-          <button class="btn btn-primary btn-block btn-lg" onclick="requestContact('book','${esc(t.id)}')">Book consultation</button>
-          <button class="btn btn-outline btn-block" onclick="requestContact('message','${esc(t.id)}')">${icon('chat')} Message</button>
+          <button class="btn btn-primary btn-block btn-lg" onclick="requestContact('book')">Book consultation</button>
+          <button class="btn btn-outline btn-block" onclick="requestContact('message')">${icon('chat')} Message</button>
           <button class="btn btn-outline btn-block" onclick="toggleFavorite('${esc(t.id)}')">${isFav ? icon('heartFill') + ' Saved' : icon('heart') + ' Save coach'}</button>
         </aside>
       </div>
@@ -745,7 +885,7 @@ function renderSignup(role){
           </label>` : ''}
           <label class="form-check">
             <input type="checkbox" required>
-            <span>I agree to the <a href="#/terms" target="_blank">Terms</a> and <a href="#/privacy" target="_blank">Privacy Policy</a></span>
+            <span>I agree to the <a href="#/">Terms</a> and <a href="#/">Privacy Policy</a></span>
           </label>
           <button type="submit" class="btn btn-primary btn-block btn-lg">
             ${role === 'pt' ? 'Create trainer account' : 'Create account'}
@@ -792,7 +932,7 @@ async function handleSignup(event, role){
     return;
   }
 
-  state.currentUser = normUser(result.user); await syncFavs();
+  state.currentUser = normUser(result.user);
   navigateTo(role === 'pt' ? '#/pt-dashboard' : '#/client-dashboard');
   render();
 }
@@ -808,7 +948,7 @@ function renderCheckInbox(email){
         <h2>Check your inbox</h2>
         <p class="muted">We've sent a confirmation link to <strong>${esc(email)}</strong>. Click it to activate your account and get started.</p>
         <div class="inbox-note">
-          <p class="muted">Can't find it? Check your spam or junk folder — confirmation emails sometimes land there.</p>
+          <p class="muted">Can't find it? Check your spam or junk folder, as confirmation emails sometimes land there.</p>
         </div>
         <a href="#/login" class="btn btn-primary btn-block btn-lg">Go to log in</a>
       </div>
@@ -882,7 +1022,6 @@ function renderLogin(){
             <span>Password</span>
             <input type="password" name="password" placeholder="Your password" required>
           </label>
-          <a href="#/forgot" class="forgot-link">Forgot password?</a>
           <button type="submit" class="btn btn-primary btn-block btn-lg">Log in</button>
         </form>
 
@@ -912,7 +1051,7 @@ async function handleLogin(event){
     submitBtn.textContent = originalLabel;
     return;
   }
-  state.currentUser = normUser(result.user); await syncFavs();
+  state.currentUser = normUser(result.user);
   navigateTo(result.user.role === 'pt' ? '#/pt-dashboard' : '#/client-dashboard');
   render();
 }
@@ -941,12 +1080,12 @@ function renderClientDashboard(){
             <span class="dash-stat-label">Saved trainers</span>
           </div>
           <div class="dash-stat">
-            <span class="dash-stat-num">${state.stats.pending + state.stats.accepted}</span>
+            <span class="dash-stat-num">0</span>
             <span class="dash-stat-label">Active bookings</span>
           </div>
           <div class="dash-stat">
-            <span class="dash-stat-num">${state.stats.unread}</span>
-            <span class="dash-stat-label">Unread messages</span>
+            <span class="dash-stat-num">0</span>
+            <span class="dash-stat-label">Messages</span>
           </div>
         </div>
 
@@ -988,16 +1127,16 @@ function renderPTDashboard(){
 
         <div class="dash-cards">
           <div class="dash-stat">
-            <span class="dash-stat-num">${state.stats.accepted}</span>
+            <span class="dash-stat-num">0</span>
             <span class="dash-stat-label">Active clients</span>
           </div>
           <div class="dash-stat">
-            <span class="dash-stat-num">${state.stats.pending}</span>
-            <span class="dash-stat-label">New requests</span>
+            <span class="dash-stat-num">0</span>
+            <span class="dash-stat-label">Upcoming sessions</span>
           </div>
           <div class="dash-stat">
-            <span class="dash-stat-num">${state.stats.unread}</span>
-            <span class="dash-stat-label">Unread messages</span>
+            <span class="dash-stat-num">0</span>
+            <span class="dash-stat-label">Profile views</span>
           </div>
         </div>
 
@@ -1245,10 +1384,10 @@ function renderDashSidebar(role){
   const user = state.currentUser;
   const currentHash = window.location.hash || "#/";
   const clientLinks = [
-    ["#/client-dashboard","Overview"], ["#/search","Find a PT"], ["#/bookings","Bookings"], ["#/messages","Messages"], ["#/profile","My profile"],
+    ["#/client-dashboard","Overview"], ["#/profile","My profile"], ["#/search","Find a PT"],
   ];
   const ptLinks = [
-    ["#/pt-dashboard","Overview"], ["#/bookings","Bookings"], ["#/messages","Messages"], ["#/profile","My profile"],
+    ["#/pt-dashboard","Overview"], ["#/profile","My profile"],
   ];
   const links = role === 'pt' ? ptLinks : clientLinks;
   return `
@@ -1276,317 +1415,6 @@ function renderDashSidebar(role){
 }
 
 /* ============================================================
-   LAUNCH FEATURES: favourites sync, booking, messages, reviews,
-   password reset, legal pages
-   ============================================================ */
-
-const CONTACT_EMAIL = "hello@yourdomain.com"; // <- change to your real support email
-const isUuid = id => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '');
-const fmtDate = d => new Date(d).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
-const LOADING = '<div class="dash-empty"><p class="muted">Loading…</p></div>';
-
-function openModal(inner){
-  closeModal();
-  const m = document.createElement('div');
-  m.id = 'modal'; m.className = 'modal';
-  m.innerHTML = `<div class="modal-bg" onclick="closeModal()"></div><div class="modal-card" role="dialog" aria-modal="true">${inner}</div>`;
-  document.body.appendChild(m);
-  const f = m.querySelector('textarea, input'); if(f) f.focus();
-}
-function closeModal(){ const m = document.getElementById('modal'); if(m) m.remove(); }
-window.addEventListener('keydown', e => { if(e.key === 'Escape') closeModal(); });
-
-// merge saved trainers between this browser and the account
-async function syncFavs(){
-  const u = state.currentUser; if(!u) return;
-  const { data } = await sb.from('favourites').select('trainer_id');
-  const remote = (data || []).map(r => r.trainer_id);
-  const extra = [...state.favorites].filter(id => isUuid(id) && !remote.includes(id));
-  remote.forEach(id => state.favorites.add(id));
-  saveFavs();
-  if(extra.length) await sb.from('favourites').upsert(extra.map(id => ({ user_id:u.id, trainer_id:id })));
-}
-
-// live counts for the dashboard cards
-async function refreshStats(){
-  const u = state.currentUser; if(!u) return;
-  const [b, m] = await Promise.all([
-    sb.from('bookings').select('status'),
-    sb.from('messages').select('id', { count:'exact', head:true }).eq('recipient_id', u.id).eq('read', false),
-  ]);
-  const rows = b.data || [], n = s => rows.filter(r => r.status === s).length;
-  const next = { pending:n('pending'), accepted:n('accepted'), unread:m.count || 0 };
-  if(JSON.stringify(next) !== JSON.stringify(state.stats)){
-    state.stats = next;
-    const h = window.location.hash;
-    if(h === '#/client-dashboard' || h === '#/pt-dashboard') render();
-  }
-}
-
-function requestContact(kind, id){
-  const u = state.currentUser;
-  if(!u){ toast('Log in or sign up to contact coaches.'); navigateTo('#/login'); return; }
-  const t = ALL_TRAINERS.find(x => x.id === id);
-  if(!t || !isUuid(t.id)){ toast('This is a demo coach. Real coaches can be booked once they join.'); return; }
-  if(u.id === t.id) return;
-  if(kind === 'book' && u.role !== 'client'){ toast('Only client accounts can book sessions.'); return; }
-  const book = kind === 'book';
-  openModal(`<h3>${book ? 'Request a consultation with' : 'Message'} ${esc(t.name)}</h3>
-    <p class="muted small">${book ? 'Share your goals and when suits you. They can accept or decline from their dashboard.' : 'Ask a question before you book.'}</p>
-    <form class="auth-form" onsubmit="sendContact(event, '${kind}', '${esc(t.id)}')">
-      <div class="form-error" id="modal-error" hidden></div>
-      <label class="form-field"><span>${book ? 'Your goals and preferred times' : 'Your message'}</span>
-        <textarea name="body" rows="5" maxlength="1000" required></textarea></label>
-      <button class="btn btn-primary btn-block" type="submit">${book ? 'Send request' : 'Send message'}</button>
-    </form>`);
-}
-
-async function sendContact(e, kind, id){
-  e.preventDefault();
-  const f = e.target, btn = f.querySelector('button'), body = f.body.value.trim();
-  if(!body) return;
-  btn.disabled = true;
-  const u = state.currentUser, t = ALL_TRAINERS.find(x => x.id === id);
-  const { error } = kind === 'book'
-    ? await sb.from('bookings').insert({ client_id:u.id, pt_id:id, client_name:u.name, pt_name:t.name, note:body })
-    : await sb.from('messages').insert({ sender_id:u.id, recipient_id:id, sender_name:u.name, recipient_name:t.name, body });
-  if(error){
-    const box = document.getElementById('modal-error');
-    box.textContent = 'Something went wrong, please try again.'; box.hidden = false; btn.disabled = false;
-    return;
-  }
-  closeModal();
-  toast(kind === 'book' ? 'Request sent! Track it under Bookings.' : 'Message sent.');
-}
-
-function dashShell(title, sub, inner){
-  return `${renderNav("")}
-  <section class="dash"><div class="wrap dash-wrap">
-    ${renderDashSidebar(state.currentUser.role)}
-    <div class="dash-main">
-      <div class="dash-welcome"><h2>${title}</h2><p class="muted">${sub}</p></div>
-      <div id="page-body">${inner}</div>
-    </div>
-  </div></section>${renderFooter()}`;
-}
-
-/* ---------- bookings ---------- */
-function renderBookings(){
-  setTimeout(loadBookings, 0);
-  const pt = state.currentUser.role === 'pt';
-  return dashShell('Bookings', pt ? 'Consultation requests from clients.' : 'Your consultation requests.', LOADING);
-}
-
-async function loadBookings(){
-  const u = state.currentUser, pt = u.role === 'pt';
-  const { data, error } = await sb.from('bookings').select('*').order('created_at', { ascending:false });
-  const el = document.getElementById('page-body'); if(!el) return;
-  if(error){ el.innerHTML = '<div class="form-error">Could not load bookings. Please refresh.</div>'; return; }
-  if(!data.length){
-    el.innerHTML = `<div class="dash-empty"><p class="muted">${pt ? 'No requests yet. A complete profile helps clients find you.' : 'No bookings yet. Find a coach and request a consultation.'}</p>
-      <a href="${pt ? '#/profile' : '#/search'}" class="btn btn-primary">${pt ? 'Edit your profile' : 'Find a coach'}</a></div>`;
-    return;
-  }
-  const { data: revs } = pt ? { data:[] } : await sb.from('reviews').select('trainer_id').eq('client_id', u.id);
-  const reviewed = new Set((revs || []).map(r => r.trainer_id));
-  el.innerHTML = data.map(b => `
-    <div class="profile-card bk">
-      <div class="bk-top"><strong>${esc(pt ? b.client_name : b.pt_name)}</strong><span class="badge st-${esc(b.status)}">${esc(b.status)}</span></div>
-      <p class="bk-note">${esc(b.note)}</p>
-      <div class="muted small">Requested ${fmtDate(b.created_at)}</div>
-      <div class="bk-actions">
-        ${pt && b.status === 'pending' ? `<button class="btn btn-primary" onclick="setBooking('${b.id}','accepted')">Accept</button><button class="btn btn-outline" onclick="setBooking('${b.id}','declined')">Decline</button>` : ''}
-        <a class="btn btn-outline" href="#/messages?with=${pt ? b.client_id : b.pt_id}">Message</a>
-        ${!pt && b.status === 'accepted' && !reviewed.has(b.pt_id) ? `<button class="btn btn-outline" onclick="openReview('${b.pt_id}')">Leave a review</button>` : ''}
-      </div>
-    </div>`).join('');
-}
-
-async function setBooking(id, status){
-  const { error } = await sb.from('bookings').update({ status }).eq('id', id);
-  if(error) toast('Could not update, please try again.');
-  else { toast(status === 'accepted' ? 'Request accepted.' : 'Request declined.'); refreshStats(); }
-  loadBookings();
-}
-
-/* ---------- reviews (only after an accepted consultation) ---------- */
-function openReview(id){
-  openModal(`<h3>Leave a review</h3>
-    <form class="auth-form" onsubmit="submitReview(event, '${id}')">
-      <div class="form-error" id="modal-error" hidden></div>
-      <label class="form-field"><span>Rating</span><select name="rating">
-        <option value="5">★★★★★ Excellent</option><option value="4">★★★★ Good</option><option value="3">★★★ OK</option>
-        <option value="2">★★ Poor</option><option value="1">★ Terrible</option></select></label>
-      <label class="form-field"><span>Your review</span><textarea name="comment" rows="4" maxlength="600" required></textarea></label>
-      <button class="btn btn-primary btn-block" type="submit">Submit review</button>
-    </form>`);
-}
-
-async function submitReview(e, id){
-  e.preventDefault();
-  const f = e.target, u = state.currentUser;
-  const { error } = await sb.from('reviews').insert({ trainer_id:id, client_id:u.id, client_name:u.name, rating:Number(f.rating.value), comment:f.comment.value.trim() });
-  if(error){
-    const box = document.getElementById('modal-error');
-    box.textContent = 'Could not save your review. You can only review a coach once, after an accepted consultation.'; box.hidden = false;
-    return;
-  }
-  closeModal(); toast('Thanks for your review!'); loadBookings(); loadTrainers();
-}
-
-async function loadReviews(id){
-  const el = document.getElementById('reviews'); if(!el) return;
-  if(!isUuid(id)){ el.innerHTML = '<p class="muted">Demo coach, no reviews.</p>'; return; }
-  const { data } = await sb.from('reviews').select('*').eq('trainer_id', id).order('created_at', { ascending:false });
-  if(!el.isConnected) return;
-  el.innerHTML = data && data.length ? data.map(r => `
-    <div class="rev"><div class="rev-top"><strong>${esc(r.client_name)}</strong>
-      <span class="rating"><span class="star">${icon('star')}</span> ${Number(r.rating).toFixed(1)}</span></div>
-      <p>${esc(r.comment)}</p><span class="muted small">${fmtDate(r.created_at)}</span></div>`).join('')
-    : '<p class="muted">No reviews yet. Clients can review after an accepted consultation.</p>';
-}
-
-/* ---------- messages ---------- */
-function renderMessages(params){
-  const w = params.get('with');
-  setTimeout(() => loadMessages(w), 0);
-  return dashShell('Messages', 'Chat with coaches and clients.', LOADING);
-}
-
-async function loadMessages(withId){
-  const u = state.currentUser;
-  const { data, error } = await sb.from('messages').select('*').order('created_at', { ascending:true });
-  const el = document.getElementById('page-body'); if(!el) return;
-  if(error){ el.innerHTML = '<div class="form-error">Could not load messages. Please refresh.</div>'; return; }
-  const th = {};
-  data.forEach(m => {
-    const mine = m.sender_id === u.id, other = mine ? m.recipient_id : m.sender_id;
-    (th[other] = th[other] || { id:other, name:mine ? m.recipient_name : m.sender_name, msgs:[] }).msgs.push(m);
-  });
-  if(withId && isUuid(withId) && !th[withId]){
-    const t = ALL_TRAINERS.find(x => x.id === withId);
-    th[withId] = { id:withId, name:t ? t.name : 'Member', msgs:[] };
-  }
-  const list = Object.values(th).sort((a, b) => ((b.msgs[b.msgs.length-1] || {}).created_at || '9').localeCompare((a.msgs[a.msgs.length-1] || {}).created_at || '9'));
-  if(!list.length){
-    el.innerHTML = `<div class="dash-empty"><p class="muted">No messages yet. Open a coach's profile and tap Message to start a conversation.</p><a href="#/search" class="btn btn-primary">Find a coach</a></div>`;
-    return;
-  }
-  const cur = th[withId] || list[0];
-  state.chatName = cur.name;
-  el.innerHTML = `<div class="chat">
-    <div class="chat-list">${list.map(c => `<a href="#/messages?with=${c.id}" class="${c.id === cur.id ? 'active' : ''}">${esc(c.name)}<small>${esc((c.msgs[c.msgs.length-1] || {}).body || 'New conversation')}</small></a>`).join('')}</div>
-    <div class="chat-pane">
-      <div class="chat-head">${esc(cur.name)}</div>
-      <div class="chat-msgs" id="chat-msgs">${cur.msgs.map(m => `<div class="bubble ${m.sender_id === u.id ? 'me' : ''}">${esc(m.body)}<small>${fmtDate(m.created_at)}</small></div>`).join('') || '<p class="muted">Say hello!</p>'}</div>
-      <form class="chat-form" onsubmit="sendReply(event, '${cur.id}')">
-        <input name="body" placeholder="Write a message" maxlength="1000" autocomplete="off" required>
-        <button class="btn btn-primary" type="submit">Send</button>
-      </form>
-    </div></div>`;
-  const box = document.getElementById('chat-msgs'); if(box) box.scrollTop = box.scrollHeight;
-  if(cur.msgs.some(m => m.recipient_id === u.id && !m.read)){
-    sb.from('messages').update({ read:true }).eq('recipient_id', u.id).eq('sender_id', cur.id).eq('read', false).then(() => refreshStats());
-  }
-}
-
-async function sendReply(e, id){
-  e.preventDefault();
-  const f = e.target, body = f.body.value.trim(), btn = f.querySelector('button'), u = state.currentUser;
-  if(!body) return;
-  btn.disabled = true;
-  const { error } = await sb.from('messages').insert({ sender_id:u.id, recipient_id:id, sender_name:u.name, recipient_name:state.chatName || 'Member', body });
-  if(error){ toast('Could not send, please try again.'); btn.disabled = false; return; }
-  loadMessages(id);
-}
-
-/* ---------- forgot / reset password ---------- */
-function renderForgot(){
-  return `${renderNav("")}
-  <section class="auth-section"><div class="wrap auth-wrap"><div class="auth-card">
-    <div class="auth-head"><h2>Reset your password</h2><p class="muted">Enter your email and we'll send you a reset link.</p></div>
-    <form class="auth-form" onsubmit="handleForgot(event)">
-      <div id="forgot-msg" hidden></div>
-      <label class="form-field"><span>Email address</span><input type="email" name="email" placeholder="you@example.com" required></label>
-      <button type="submit" class="btn btn-primary btn-block btn-lg">Send reset link</button>
-    </form>
-    <p class="auth-switch"><a href="#/login">Back to log in</a></p>
-  </div></div></section>${renderFooter()}`;
-}
-
-async function handleForgot(e){
-  e.preventDefault();
-  const f = e.target, btn = f.querySelector('button'), box = document.getElementById('forgot-msg');
-  btn.disabled = true;
-  const { error } = await sb.auth.resetPasswordForEmail(f.email.value.trim().toLowerCase(), { redirectTo: window.location.origin + window.location.pathname });
-  box.hidden = false;
-  box.className = error ? 'form-error' : 'form-success';
-  box.textContent = error ? 'Something went wrong, please try again.' : "If an account exists for that email, a reset link is on its way. Check your spam folder too.";
-  btn.disabled = false;
-}
-
-function renderReset(){
-  return `${renderNav("")}
-  <section class="auth-section"><div class="wrap auth-wrap"><div class="auth-card">
-    <div class="auth-head"><h2>Choose a new password</h2><p class="muted">Pick something you haven't used elsewhere.</p></div>
-    <form class="auth-form" onsubmit="handleReset(event)">
-      <div id="reset-msg" class="form-error" hidden></div>
-      <label class="form-field"><span>New password</span><input type="password" name="password" minlength="6" placeholder="At least 6 characters" required></label>
-      <label class="form-field"><span>Confirm password</span><input type="password" name="confirm" minlength="6" required></label>
-      <button type="submit" class="btn btn-primary btn-block btn-lg">Update password</button>
-    </form>
-  </div></div></section>${renderFooter()}`;
-}
-
-async function handleReset(e){
-  e.preventDefault();
-  const f = e.target, box = document.getElementById('reset-msg');
-  const fail = msg => { box.textContent = msg; box.hidden = false; };
-  if(f.password.value !== f.confirm.value) return fail("Those passwords don't match.");
-  const { error } = await sb.auth.updateUser({ password: f.password.value });
-  if(error) return fail('That reset link has expired. Please request a new one.');
-  state.recovery = false;
-  toast('Password updated.');
-  const u = state.currentUser;
-  navigateTo(u ? (u.role === 'pt' ? '#/pt-dashboard' : '#/client-dashboard') : '#/login');
-}
-
-/* ---------- legal + contact (starter text: have a solicitor review before launch) ---------- */
-const LEGAL = {
-  terms:{ title:'Terms of Service', html:`
-    <h3>1. What PT Your Way is</h3><p>PT Your Way is a platform that connects clients with independent personal trainers. We do not employ trainers or provide training ourselves, and any training agreement is between the client and the trainer.</p>
-    <h3>2. Accounts</h3><p>You must be 18 or over, give accurate information and keep your password secure. You are responsible for activity on your account.</p>
-    <h3>3. Trainers</h3><p>Trainers are responsible for holding the qualifications and insurance they claim, for the accuracy of their profile, and for the services they provide.</p>
-    <h3>4. Clients and your health</h3><p>Check with a doctor before starting any exercise programme. Advice from trainers is not medical advice.</p>
-    <h3>5. Acceptable use</h3><p>Do not harass others, post fake reviews, send spam, impersonate anyone or use the platform for anything unlawful. We may suspend accounts that break these rules.</p>
-    <h3>6. Reviews</h3><p>Reviews must reflect your genuine experience. We may remove reviews that are abusive, false or off-topic.</p>
-    <h3>7. Liability</h3><p>To the extent permitted by law, PT Your Way is not liable for the conduct of users or for injury or loss arising from training. Nothing in these terms excludes liability that cannot legally be excluded.</p>
-    <h3>8. Changes and law</h3><p>We may update these terms and will post the new version here. These terms are governed by the laws of England and Wales. Questions: <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a>.</p>` },
-  privacy:{ title:'Privacy Policy', html:`
-    <h3>What we collect</h3><p>Your name, email, role and anything you add to your profile (such as bio, city, photo, phone number and address), plus your bookings, messages, reviews and saved coaches.</p>
-    <h3>How we use it</h3><p>To run your account, show trainer profiles, connect clients and trainers, and keep the service secure. We do not sell your data or show advertising.</p>
-    <h3>What is public</h3><p>A trainer's name, photo, specialism, bio, city, price and reviews are visible to everyone. Phone numbers, addresses and postcodes are never shown publicly. Messages and bookings are visible only to the people involved.</p>
-    <h3>Who processes it</h3><p>We use Supabase to host our database, authentication and file storage, and Google Fonts to load fonts.</p>
-    <h3>Cookies and local storage</h3><p>We use browser storage only to keep you signed in and remember coaches you have saved.</p>
-    <h3>Your rights</h3><p>Under UK GDPR you can ask to access, correct or delete your data, or object to how we use it. Email <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a> and we will respond within one month.</p>` },
-  safety:{ title:'Safety', html:`
-    <h3>Before you book</h3><p>Check a coach's qualifications and insurance, read their reviews, and use the message feature to ask questions first.</p>
-    <h3>Meeting in person</h3><p>Meet in a public gym or open space for the first session and tell someone where you will be.</p>
-    <h3>Stay on the platform</h3><p>Keep conversations in PT Your Way messages while you get to know a coach, and never share banking details or passwords.</p>
-    <h3>Your health</h3><p>Tell your coach about injuries or conditions and speak to a doctor before starting something new.</p>
-    <h3>Report a concern</h3><p>If something feels wrong, email <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a> and we will look into it.</p>` },
-  contact:{ title:'Contact us', html:`
-    <p>Questions, feedback or need help with your account? Email us at <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a> and we'll get back to you as soon as we can.</p>` },
-};
-
-function renderLegal(k){
-  const p = LEGAL[k];
-  return `${renderNav("")}
-  <section class="legal wrap"><h1>${p.title}</h1>${k === 'contact' ? '' : '<p class="muted small">Last updated October 2026</p>'}${p.html}</section>
-  ${renderFooter()}`;
-}
-
-/* ============================================================
    ROUTER
    ============================================================ */
 
@@ -1600,11 +1428,11 @@ function render(){
   } else if(hash === "#/search"){
     app.innerHTML = renderSearch(params);
   } else if(hash === "#/how-it-works"){
-    app.innerHTML = renderPlaceholder("How it works", "A step-by-step guide to finding, booking and training with your coach.", "How It Works");
+    app.innerHTML = renderHowItWorks();
   } else if(hash === "#/for-pts"){
-    app.innerHTML = renderPlaceholder("For personal trainers", "List your services, manage bookings and grow your client base.", "For PTs");
+    app.innerHTML = renderForPTs();
   } else if(hash === "#/about"){
-    app.innerHTML = renderPlaceholder("About PT Your Way", "We connect clients with qualified, verified personal trainers — online or in person.", "About");
+    app.innerHTML = renderAbout();
   } else if(hash === "#/login"){
     if(state.currentUser){ navigateTo(state.currentUser.role === 'pt' ? '#/pt-dashboard' : '#/client-dashboard'); return render(); }
     app.innerHTML = renderLogin();
@@ -1624,27 +1452,18 @@ function render(){
   } else if(hash === "#/client-dashboard"){
     if(!state.currentUser){ navigateTo('#/login'); return render(); }
     if(state.currentUser.role !== 'client'){ navigateTo('#/pt-dashboard'); return render(); }
-    app.innerHTML = renderClientDashboard(); refreshStats();
+    app.innerHTML = renderClientDashboard();
   } else if(hash === "#/pt-dashboard"){
     if(!state.currentUser){ navigateTo('#/login'); return render(); }
     if(state.currentUser.role !== 'pt'){ navigateTo('#/client-dashboard'); return render(); }
-    app.innerHTML = renderPTDashboard(); refreshStats();
+    app.innerHTML = renderPTDashboard();
   } else if(hash === "#/profile"){
     if(!state.currentUser){ navigateTo('#/login'); return render(); }
     app.innerHTML = renderProfile();
   } else if(hash === "#/welcome"){
     app.innerHTML = renderWelcome();
-  } else if(hash === "#/bookings" || hash === "#/messages"){
-    if(!state.currentUser){ navigateTo('#/login'); return render(); }
-    app.innerHTML = hash === "#/bookings" ? renderBookings() : renderMessages(params);
-  } else if(hash === "#/forgot"){
-    app.innerHTML = renderForgot();
-  } else if(hash === "#/reset-password"){
-    app.innerHTML = renderReset();
-  } else if(LEGAL[hash.slice(2)]){
-    app.innerHTML = renderLegal(hash.slice(2));
   } else if(hash.startsWith("#/trainer/")){
-    const tid = hash.replace("#/trainer/", ""); app.innerHTML = renderTrainerProfile(tid); loadReviews(tid);
+    app.innerHTML = renderTrainerProfile(hash.replace("#/trainer/",""));
   } else {
     app.innerHTML = renderPlaceholder("Page not found", "That page doesn't exist yet.");
   }
@@ -1654,11 +1473,8 @@ async function initApp(){
   // restore an existing session (if the person is already logged in) before
   // the first render, so the nav/dashboard shows the right state immediately
   state.currentUser = normUser(await AUTH.getSession());
-  await syncFavs();
-  if(state.recovery) window.location.hash = '#/reset-password';
   // load real trainers first (max 2.5s) so profile links open straight away
   await Promise.race([loadTrainers(), new Promise(r => setTimeout(r, 2500))]);
-  state.ready = true;
   render();
 }
 

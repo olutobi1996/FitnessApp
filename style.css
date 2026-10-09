@@ -811,54 +811,42 @@ img{ max-width:100%; display:block; }
   html{ scroll-behavior:auto; }
 }
 
-/* ---------- modal ---------- */
-.modal{ position:fixed; inset:0; z-index:250; display:flex; align-items:center; justify-content:center; padding:20px; }
-.modal-bg{ position:absolute; inset:0; background:rgba(9,17,35,.55); }
-.modal-card{ position:relative; width:100%; max-width:480px; max-height:90vh; overflow-y:auto; background:#fff; border-radius:var(--radius-lg); padding:28px; box-shadow:var(--shadow-lg); }
-.modal-card h3{ margin:0 0 6px; font-size:1.25rem; font-weight:800; }
-.modal-card p{ margin:0 0 18px; }
-.modal-card textarea, .modal-card select{ font-family:inherit; font-size:.92rem; border:1px solid var(--line); border-radius:var(--radius-sm); padding:12px 14px; background:var(--bg-soft); outline:none; resize:vertical; }
-.modal-card textarea:focus{ border-color:var(--blue); background:#fff; }
-
-/* ---------- bookings + reviews ---------- */
-.bk{ margin-bottom:14px; }
-.bk-top{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
-.bk-note{ margin:0 0 10px; color:var(--ink-soft); line-height:1.6; white-space:pre-line; }
-.bk-actions{ display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; }
-.bk-actions .btn{ padding:9px 18px; }
-.badge.st-pending{ background:#fff4dd; color:#9a6200; }
-.badge.st-accepted{ background:#e8f6ee; color:#1c6b40; }
-.badge.st-declined{ background:#fdeceb; color:#c0392b; }
-.badge[class*="st-"]{ text-transform:capitalize; }
-.rev{ padding:14px 0; border-bottom:1px solid var(--line); }
-.rev:last-child{ border-bottom:none; }
-.rev-top{ display:flex; justify-content:space-between; margin-bottom:4px; }
-.rev p{ margin:0 0 4px; color:var(--ink-soft); line-height:1.6; }
-
-/* ---------- messages ---------- */
-.chat{ display:grid; grid-template-columns:260px 1fr; background:#fff; border:1px solid var(--line); border-radius:var(--radius-lg); overflow:hidden; min-height:460px; }
-.chat-list{ border-right:1px solid var(--line); overflow-y:auto; max-height:560px; }
-.chat-list a{ display:block; padding:14px 18px; font-weight:700; font-size:.9rem; border-bottom:1px solid var(--line); }
-.chat-list a small{ display:block; font-weight:500; color:var(--muted); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.chat-list a.active, .chat-list a:hover{ background:var(--blue-light); }
-.chat-pane{ display:flex; flex-direction:column; min-width:0; }
-.chat-head{ padding:16px 20px; border-bottom:1px solid var(--line); font-weight:800; }
-.chat-msgs{ flex:1; overflow-y:auto; max-height:400px; padding:20px; display:flex; flex-direction:column; gap:10px; background:var(--bg-soft); }
-.bubble{ align-self:flex-start; max-width:78%; background:#fff; border:1px solid var(--line); padding:10px 14px; border-radius:16px 16px 16px 4px; font-size:.9rem; line-height:1.5; overflow-wrap:anywhere; }
-.bubble.me{ align-self:flex-end; background:var(--blue); color:#fff; border-color:var(--blue); border-radius:16px 16px 4px 16px; }
-.bubble small{ display:block; margin-top:4px; font-size:.7rem; opacity:.65; }
-.chat-form{ display:flex; gap:10px; padding:14px; border-top:1px solid var(--line); }
-.chat-form input{ flex:1; font-family:inherit; font-size:.92rem; border:1px solid var(--line); border-radius:999px; padding:11px 18px; background:var(--bg-soft); outline:none; }
-.chat-form input:focus{ border-color:var(--blue); background:#fff; }
-
-/* ---------- misc ---------- */
-.forgot-link{ align-self:flex-end; margin-top:-8px; font-size:.82rem; font-weight:600; color:var(--blue); }
-.legal{ max-width:760px; padding:64px 20px 96px; }
-.legal h1{ font-size:2.1rem; font-weight:800; margin:0 0 6px; }
-.legal h3{ margin:28px 0 6px; font-size:1.05rem; font-weight:800; }
-.legal p{ margin:0; line-height:1.7; color:var(--ink-soft); }
-.legal a{ color:var(--blue); font-weight:600; }
-@media (max-width: 700px){
-  .chat{ grid-template-columns:1fr; }
-  .chat-list{ border-right:none; border-bottom:1px solid var(--line); max-height:150px; }
+/* ---------- info pages: how it works / for PTs / about ---------- */
+.pg-hero{ background:linear-gradient(180deg, var(--blue-light), #fff); padding:88px 0 72px; text-align:center; }
+.pg-hero h1{ margin:0 auto 16px; max-width:760px; font-size:clamp(2.1rem, 4.5vw, 3.2rem); line-height:1.1; letter-spacing:-.02em; font-weight:800; }
+.pg-hero p{ margin:0 auto; max-width:560px; font-size:1.1rem; line-height:1.6; color:var(--ink-soft); }
+.pg-actions{ display:flex; justify-content:center; flex-wrap:wrap; gap:12px; margin-top:32px; }
+.pg-section{ padding:80px 0; }
+.pg-soft{ background:var(--bg-soft); }
+.pg-narrow{ max-width:760px; }
+.pg-head{ text-align:center; max-width:640px; margin:0 auto 44px; }
+.pg-head h2{ margin:0; font-size:2rem; letter-spacing:-.01em; font-weight:800; }
+.pg-head p{ margin:12px 0 0; color:var(--muted); line-height:1.6; }
+.pg-feats{ display:grid; grid-template-columns:repeat(3, 1fr); gap:24px; }
+.pg-feat{ background:#fff; border:1px solid var(--line); border-radius:var(--radius-lg); padding:28px; box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:14px; }
+.pg-feat h4{ margin:0; font-size:1.05rem; font-weight:800; }
+.pg-feat p{ margin:0; color:var(--muted); font-size:.92rem; line-height:1.6; }
+.pg-steps{ display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:24px; }
+.pg-step{ position:relative; padding:28px; border:1px solid var(--line); border-radius:var(--radius-lg); background:#fff; }
+.pg-num{ display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:50%; background:var(--blue); color:#fff; font-weight:800; margin-bottom:16px; }
+.pg-step h4{ margin:0 0 8px; font-size:1.05rem; font-weight:800; }
+.pg-step p{ margin:0; color:var(--muted); font-size:.92rem; line-height:1.6; }
+.pg-compare{ display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+.pg-col{ background:#fff; border:1px solid var(--line); border-radius:var(--radius-lg); padding:32px; }
+.pg-col h4{ margin:0 0 18px; font-size:1.15rem; font-weight:800; }
+.pg-col-brand{ border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-light); }
+.pg-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:14px; }
+.pg-list li{ display:flex; gap:12px; align-items:flex-start; line-height:1.5; color:var(--ink-soft); font-size:.95rem; }
+.pg-list li > span{ flex:none; width:24px; height:24px; border-radius:50%; background:var(--blue-light); color:var(--blue); display:flex; align-items:center; justify-content:center; font-weight:800; }
+.pg-muted li > span{ background:#f1f2f5; color:var(--muted); }
+.pg-faq details{ border-bottom:1px solid var(--line); padding:18px 0; }
+.pg-faq summary{ cursor:pointer; font-weight:700; list-style:none; display:flex; justify-content:space-between; gap:16px; }
+.pg-faq summary::after{ content:'+'; color:var(--blue); font-size:1.3rem; line-height:1; }
+.pg-faq details[open] summary::after{ content:'\2212'; }
+.pg-faq details p{ margin:12px 0 0; color:var(--muted); line-height:1.65; }
+.pg-story p{ font-size:1.05rem; line-height:1.8; color:var(--ink-soft); margin:0 0 18px; }
+@media (max-width: 900px){
+  .pg-feats, .pg-compare{ grid-template-columns:1fr; }
+  .pg-hero{ padding:64px 0 52px; }
+  .pg-section{ padding:56px 0; }
 }
