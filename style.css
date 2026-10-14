@@ -918,3 +918,103 @@ img{ max-width:100%; display:block; }
 .cl-facts div{ display:flex; gap:12px; font-size:.9rem; }
 .cl-facts dt{ width:90px; flex:none; color:var(--muted); }
 .cl-facts dd{ margin:0; font-weight:600; color:var(--ink); overflow-wrap:anywhere; }
+
+/* ============================================================
+   PREMIUM LAYER: design tokens, typography, surfaces, motion
+   Brand blue stays the hero colour; navy gives depth and contrast.
+   ============================================================ */
+:root{
+  --navy:#081226; --navy-2:#0f1b33; --glow:rgba(37,99,235,.35);
+  --ease-out:cubic-bezier(.16,1,.3,1);
+}
+html{ scroll-behavior:smooth; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+h1,h2,h3{ letter-spacing:-.025em; }
+:focus-visible{ outline:2px solid #5b9bff; outline-offset:3px; border-radius:6px; }
+.form-field input:focus, .form-field select:focus, .form-field textarea:focus{ box-shadow:0 0 0 4px rgba(37,99,235,.15); }
+.eyebrow{ display:inline-flex; align-items:center; gap:10px; text-transform:uppercase; letter-spacing:.16em; font-size:.72rem; font-weight:700; color:var(--blue); }
+.eyebrow::before{ content:''; width:22px; height:2px; background:currentColor; border-radius:2px; }
+.pg-hero .eyebrow, .hero-eyebrow{ justify-content:center; }
+
+/* scroll progress */
+.scroll-bar{ position:fixed; top:0; left:0; right:0; height:3px; z-index:400; transform-origin:0 50%; transform:scaleX(0); pointer-events:none;
+  background:linear-gradient(90deg, var(--blue), #5b9bff); }
+
+/* navigation */
+.site-nav{ transition:background .3s var(--ease), box-shadow .3s var(--ease), backdrop-filter .3s; }
+.site-nav.scrolled{ background:rgba(255,255,255,.82); backdrop-filter:saturate(1.5) blur(16px); -webkit-backdrop-filter:saturate(1.5) blur(16px); box-shadow:0 1px 0 var(--line), 0 10px 30px rgba(15,27,51,.06); }
+.nav-links a{ position:relative; padding:6px 0; }
+.nav-links a::after{ content:''; position:absolute; left:0; right:0; bottom:0; height:2px; border-radius:2px; background:var(--blue); transform:scaleX(0); transform-origin:left; transition:transform .35s var(--ease-out); }
+.nav-links a:hover::after, .nav-links a.active::after{ transform:scaleX(1); }
+
+/* buttons: tactile, with a light sweep */
+.btn{ position:relative; overflow:hidden; transition:transform .25s var(--ease-out), box-shadow .25s var(--ease-out), background .25s, border-color .25s, color .25s; }
+.btn:active{ transform:scale(.97); }
+.btn-primary{ background:linear-gradient(135deg, #3b7bff, var(--blue-dark)); box-shadow:0 6px 18px rgba(37,99,235,.32); }
+.btn-primary:hover{ transform:translateY(-2px); box-shadow:0 12px 28px rgba(37,99,235,.42); }
+.btn-primary::after{ content:''; position:absolute; inset:0; pointer-events:none; transform:translateX(-130%);
+  background:linear-gradient(110deg, transparent 30%, rgba(255,255,255,.35) 50%, transparent 70%); transition:transform .8s var(--ease-out); }
+.btn-primary:hover::after{ transform:translateX(130%); }
+.btn-outline:hover{ transform:translateY(-2px); box-shadow:var(--shadow-md); }
+
+/* hero: cinematic depth over the existing video */
+.hero-media{ inset:-20% 0 0 0; will-change:transform; }
+.hero-media video{ animation:kenburns 26s ease-in-out infinite alternate; }
+.hero::before{ content:''; position:absolute; inset:0; z-index:1; pointer-events:none;
+  background:radial-gradient(60% 90% at 12% 35%, rgba(37,99,235,.5), transparent 62%),
+             linear-gradient(90deg, rgba(8,18,38,.88) 0%, rgba(8,18,38,.5) 52%, rgba(8,18,38,.1) 100%); }
+.hero-inner{ position:relative; z-index:2; }
+.hero-eyebrow, .hero h1, .hero h1 .accent, .hero p{ animation:heroIn 1.1s var(--ease-out) both; }
+.hero-eyebrow{ animation-delay:.1s; } .hero h1{ animation-delay:.25s; } .hero h1 .accent{ animation-delay:.45s; } .hero p{ animation-delay:.7s; }
+.hero h1 .accent{ background:linear-gradient(90deg, #8bb8ff, #5b9bff 40%, #cfe0ff); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+.search-card .search-bar{ box-shadow:0 30px 70px rgba(8,18,38,.28); }
+
+/* info-page heroes get a slow ambient glow */
+.pg-hero{ position:relative; overflow:hidden; }
+.pg-hero::before{ content:''; position:absolute; width:620px; height:620px; right:-160px; top:-260px; border-radius:50%; pointer-events:none;
+  background:radial-gradient(circle, rgba(37,99,235,.18), transparent 65%); animation:drift 14s ease-in-out infinite alternate; }
+.pg-hero .wrap{ position:relative; }
+
+/* dark, confident call-to-action */
+.cta-band{ background:radial-gradient(70% 140% at 100% 0%, rgba(59,123,255,.55), transparent 60%), linear-gradient(135deg, var(--navy), #14306f); border:none; box-shadow:0 30px 60px rgba(8,18,38,.25); }
+.cta-band h3{ color:#fff; } .cta-band p{ color:#c9d6f3; }
+.cta-band .btn-outline{ background:transparent; color:#fff; border-color:rgba(255,255,255,.35); }
+.cta-band .btn-outline:hover{ background:rgba(255,255,255,.1); }
+
+/* surfaces: lift + soft brand glow */
+.pg-feat, .pg-step, .pg-col, .dash-stat, .bk, .cl{ transition:transform .35s var(--ease-out), box-shadow .35s var(--ease-out), border-color .35s; }
+.pg-feat:hover, .pg-step:hover, .dash-stat:hover, .bk:hover, .cl:hover{ transform:translateY(-4px); box-shadow:0 18px 40px rgba(15,27,51,.1); border-color:#cddcfa; }
+.feat-icon, .pg-feat .feat-icon{ background:linear-gradient(135deg, var(--blue-light), #dbe7ff); box-shadow:inset 0 0 0 1px rgba(37,99,235,.12); }
+.dash-stat-num{ font-variant-numeric:tabular-nums; background:linear-gradient(135deg, var(--ink), var(--blue-dark)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+.comp-bar span{ background:linear-gradient(90deg, var(--blue), #5b9bff, var(--blue)); background-size:200% 100%; animation:shimmer 2.6s linear infinite; transition:width 1.1s var(--ease-out); }
+
+/* trainer cards: cursor spotlight, gentle tilt, image zoom */
+.tcard{ position:relative; }
+.tcard, .tcard:hover{ transform:perspective(900px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateY(var(--ty,0px)); }
+.tcard:hover{ --ty:-6px; box-shadow:0 24px 50px rgba(15,27,51,.18); }
+.tcard::before{ content:''; position:absolute; inset:0; z-index:2; pointer-events:none; opacity:0; transition:opacity .3s;
+  background:radial-gradient(320px circle at var(--mx,50%) var(--my,50%), rgba(59,123,255,.16), transparent 60%); }
+.tcard:hover::before{ opacity:1; }
+.tcard-photo img{ transition:transform .8s var(--ease-out); }
+.tcard:hover .tcard-photo img{ transform:scale(1.06); }
+.tcard-fav{ transition:transform .25s var(--ease-out); }
+.tcard-fav:active{ transform:scale(.8); }
+
+/* scroll reveals + page entrance (applied only when the page changes) */
+.rv{ opacity:0; translate:0 28px;
+  transition:opacity .9s var(--ease-out) var(--d,0ms), translate .9s var(--ease-out) var(--d,0ms), transform .3s var(--ease-out), box-shadow .3s var(--ease-out), border-color .3s, background .3s; }
+.rv.in{ opacity:1; translate:0 0; }
+#app.page-in{ animation:pageIn .55s var(--ease-out); }
+
+/* modals and loading polish */
+.modal-bg{ backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); animation:fadeIn .3s both; }
+.modal-card{ animation:popIn .4s var(--ease-out) both; }
+.dash-empty .muted:only-child{ background:linear-gradient(90deg, var(--muted) 40%, #c9d2e2 50%, var(--muted) 60%); background-size:200% 100%; -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; animation:shimmer 1.8s linear infinite; }
+
+@keyframes heroIn{ from{ opacity:0; transform:translateY(30px); filter:blur(8px); } to{ opacity:1; transform:none; filter:none; } }
+@keyframes kenburns{ from{ transform:scale(1); } to{ transform:scale(1.07); } }
+@keyframes drift{ to{ transform:translate(-60px, 50px) scale(1.15); } }
+@keyframes shimmer{ to{ background-position:-200% 0; } }
+@keyframes pageIn{ from{ opacity:0; transform:translateY(14px); } to{ opacity:1; transform:none; } }
+@keyframes fadeIn{ from{ opacity:0; } to{ opacity:1; } }
+@keyframes popIn{ from{ opacity:0; transform:translateY(18px) scale(.96); } to{ opacity:1; transform:none; } }
+@media (max-width:700px){ .tcard, .tcard:hover{ transform:none; } .hero-media{ inset:0; } }

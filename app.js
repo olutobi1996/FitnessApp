@@ -1865,3 +1865,75 @@ async function initApp(){
 
 window.addEventListener('hashchange', render);
 window.addEventListener('DOMContentLoaded', initApp);
+
+/* ============================================================
+   PREMIUM MOTION LAYER
+   Watches #app so it never touches app logic. Entrances only run
+   when the PAGE changes, so saving a coach or filtering never replays them.
+   Everything is skipped for people who prefer reduced motion.
+   ============================================================ */
+(function(){
+  const app = document.getElementById('app'); if(!app) return;
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const fine = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  const REVEAL = '.section-head, .tgrid > *, .feat, .pg-feat, .pg-step, .pg-col, .pg-head, .cta-band, .dash-stat, .dash-section-head, .comp, .bk, .cl';
+  const route = () => (location.hash || '#/').split('?')[0];
+  let lastRoute = null, io = null;
+
+  const bar = document.createElement('div'); bar.className = 'scroll-bar'; document.body.appendChild(bar);
+
+  function countUp(el){
+    const n = parseInt(el.textContent, 10); if(!n || n < 1) return;
+    const t0 = performance.now();
+    (function f(t){ const p = Math.min((t - t0) / 900, 1); el.textContent = Math.round(n * (1 - Math.pow(1 - p, 3))); if(p < 1) requestAnimationFrame(f); })(t0);
+  }
+
+  function enhance(){
+    const r = route(), fresh = r !== lastRoute; lastRoute = r;
+    if(app.firstElementChild) app.firstElementChild.classList.add('site-nav');
+    if(!fresh || reduce) return;
+    app.classList.remove('page-in'); void app.offsetWidth; app.classList.add('page-in');
+    if(io) io.disconnect();
+    if('IntersectionObserver' in window){
+      io = new IntersectionObserver(es => es.forEach(e => { if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } }), { rootMargin:'0px 0px -8% 0px', threshold:.08 });
+      app.querySelectorAll(REVEAL).forEach(el => {
+        if(el.closest('.hero') || !el.parentElement) return;
+        el.style.setProperty('--d', Math.min([...el.parentElement.children].indexOf(el), 6) * 70 + 'ms');
+        el.classList.add('rv'); io.observe(el);
+      });
+    }
+    app.querySelectorAll('.dash-stat-num').forEach(countUp);
+    app.querySelectorAll('.comp-bar span').forEach(s => { const w = s.style.width; s.style.width = '0'; requestAnimationFrame(() => requestAnimationFrame(() => { s.style.width = w; })); });
+  }
+  new MutationObserver(enhance).observe(app, { childList:true });
+  enhance();
+
+  // scroll: progress bar, nav glass, hero parallax (one rAF per frame)
+  let ticking = false;
+  function onScroll(){
+    if(ticking) return; ticking = true;
+    requestAnimationFrame(() => {
+      ticking = false;
+      const y = window.scrollY, h = document.documentElement.scrollHeight - window.innerHeight;
+      bar.style.transform = 'scaleX(' + (h > 0 ? y / h : 0) + ')';
+      if(app.firstElementChild) app.firstElementChild.classList.toggle('scrolled', y > 12);
+      const m = app.querySelector('.hero-media');
+      if(m && !reduce && y < 900) m.style.transform = 'translate3d(0,' + (y * .18).toFixed(1) + 'px,0)';
+    });
+  }
+  window.addEventListener('scroll', onScroll, { passive:true });
+
+  // trainer cards follow the cursor
+  if(fine && !reduce){
+    document.addEventListener('pointermove', e => {
+      const c = e.target.closest && e.target.closest('.tcard'); if(!c) return;
+      const b = c.getBoundingClientRect(), x = (e.clientX - b.left) / b.width, y = (e.clientY - b.top) / b.height;
+      c.style.setProperty('--mx', (x * 100) + '%'); c.style.setProperty('--my', (y * 100) + '%');
+      c.style.setProperty('--rx', ((.5 - y) * 5).toFixed(2) + 'deg'); c.style.setProperty('--ry', ((x - .5) * 6).toFixed(2) + 'deg');
+    }, { passive:true });
+    document.addEventListener('pointerout', e => {
+      const c = e.target.closest && e.target.closest('.tcard');
+      if(c && !c.contains(e.relatedTarget)){ c.style.setProperty('--rx', '0deg'); c.style.setProperty('--ry', '0deg'); }
+    });
+  }
+})();
